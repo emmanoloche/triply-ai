@@ -17,10 +17,24 @@
 
 ---
 
+## Deferred until the native Android dev build succeeds
+
+`npm run android` / `expo run:android` has repeatedly stalled or been stopped due to limited/unstable mobile data (see feedback memory: limited mobile data). Everything below needs a real dev build (`expo-dev-client`), not Expo Go, and not the web target. None of it is blocking current work — Expo Go + web cover everything else. Revisit this list once a build actually completes.
+
+- [ ] **Native Google/Apple sign-in** (`useSignInWithGoogle`, `useSignInWithApple` from `@clerk/expo`) — currently using `useSSO()` (browser-based) instead, which works everywhere including Expo Go and web. Native sign-in would be layered on top later, additive, not a replacement — `useSSO` still needed as the Web fallback either way. Needs: `expo-crypto` (Google), `expo-apple-authentication` (Apple, iOS only), Google Cloud OAuth client IDs in `.env`, a rebuild.
+- [ ] **Sentry native crash reporting** — the JS-side Sentry setup (`Sentry.init`, error boundary, navigation tracking) is done and works in Expo Go/web. Native crash capture and native debug-symbol upload only activate in a real build.
+- [ ] **`react-native-maps`** — not installed yet; when it is, it won't run in Expo Go at all (native module). Needed for the trip-detail map (Phase 4) and requires a Google Maps API key on Android.
+- [ ] **A real installable app** — for sharing, testing on other phones, or eventually publishing. Expo Go is a dev-only wrapper.
+
+Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not a bug to fix: "This app cannot run in Expo Go (maps, Apple auth, Sentry native). Use a development build."
+
+---
+
 ## Phase 0 — Foundations
 
 - [ ] Read Expo v57 docs for API routes / server output (per `AGENTS.md`)
 - [ ] Set `web.output: "server"` in `app.json` (enables API routes)
+- [x] Install `expo-dev-client` (required regardless of the Clerk auth-flow choice, since `react-native-maps` and `expo-apple-authentication` already need a custom dev build — Expo Go alone won't run this app)
 - [ ] Install Expo-native deps: `@sentry/react-native`, `react-native-maps`, `expo-secure-store`, `expo-web-browser`, `expo-auth-session`, `expo-crypto`, `expo-apple-authentication`
 - [ ] Install JS/server deps: `@clerk/expo`, `drizzle-orm`, `@neondatabase/serverless`, `inngest`, `svix`, `@google/genai` (Gemini), `imagekit`, `zod`
 - [ ] Install dev deps: `drizzle-kit`, `dotenv`
@@ -32,12 +46,12 @@
 
 ## Phase 1 — Auth & User Sync
 
-- [ ] `ClerkProvider` + `tokenCache` wired into `src/app/_layout.tsx`
-- [ ] Route protection: redirect signed-out → auth, signed-in → app (`(auth)/_layout.tsx` + `(home)/_layout.tsx`)
-- [ ] Single auth screen (`(auth)/sign-in.tsx`) — **Google** + **Apple** both on one page via `useSSO` (`hooks/useSSOAuth.ts`)
-  - [ ] **Google** (`oauth_google`) — Android, iOS, Web
-  - [ ] **Apple** (`oauth_apple`) — iOS and Web (Apple's web OAuth flow); confirm Android behavior (Apple doesn't offer a native Android sign-in — falls back to Clerk's hosted browser flow there)
-- [ ] Configure redirect URI / scheme (`triply`) for native SSO (`AuthSession.makeRedirectUri()`)
+- [x] `ClerkProvider` + `tokenCache` wired into `src/app/_layout.tsx`
+- [~] Route protection: redirect signed-out → auth, signed-in → app — done via `(auth)/_layout.tsx` + root `src/app/index.tsx` (no `(home)` group yet; `index.tsx` shows a temporary placeholder since the real home screen isn't built — see Phase 4)
+- [x] Single auth screen (`(auth)/sign-in.tsx`) — **Google** + **Apple** both on one page via `useSSO` (inline in `sign-in.tsx`, not a separate `hooks/useSSOAuth.ts` — same behavior, different file layout)
+  - [x] **Google** (`oauth_google`) — confirmed working end-to-end on Android via Expo Go (2026-09-22, real sign-in with a Google account). Session persists across a full app restart (token cache confirmed working). iOS and Web not yet tested.
+  - [ ] **Apple** (`oauth_apple`) — implemented, not yet tested on any platform
+- [x] Redirect URI / scheme (`triply`) for SSO — already set in `app.json`; `useSSO` uses `AuthSession.makeRedirectUri()` automatically, no extra config needed
 - [ ] Sign-out action (`(home)/index.tsx` via `useClerk().signOut`)
 - [ ] Clerk webhook API route (`/api/webhooks/clerk+api.ts`) verifying with `svix`
 - [ ] Webhook upserts `user.created` / `user.updated` → Neon `users`
