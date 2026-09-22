@@ -207,7 +207,7 @@ export default function SignIn() {
               />
             </View>
           </View>
-
+          
           <Text className="mt-[26.2px] text-center text-[12px] font-normal leading-[18px] text-white">
             By continuing, you agree to our{"\n"}
             <Text className="text-[#2094FF]">Terms of Service</Text> and{" "}
