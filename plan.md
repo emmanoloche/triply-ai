@@ -5,8 +5,7 @@
 >
 > Structure mirrors a tutorial's own build plan, adapted for two real differences: this app targets
 > **Android + iOS + Web** (not iOS-only), and uses **Gemini** for all generation (not OpenAI — no
-> paid OpenAI plan available). Everything below is unchecked: nothing has been implemented in this
-> repo yet (see `git status` — only `plan.md` itself is new).
+> paid OpenAI plan available).
 
 ---
 
@@ -35,49 +34,50 @@ Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not 
 - [ ] Read Expo v57 docs for API routes / server output (per `AGENTS.md`)
 - [ ] Set `web.output: "server"` in `app.json` (enables API routes)
 - [x] Install `expo-dev-client` (required regardless of the Clerk auth-flow choice, since `react-native-maps` and `expo-apple-authentication` already need a custom dev build — Expo Go alone won't run this app)
-- [ ] Install Expo-native deps: `@sentry/react-native`, `react-native-maps`, `expo-secure-store`, `expo-web-browser`, `expo-auth-session`, `expo-crypto`, `expo-apple-authentication`
-- [ ] Install JS/server deps: `@clerk/expo`, `drizzle-orm`, `@neondatabase/serverless`, `inngest`, `svix`, `@google/genai` (Gemini), `imagekit`, `zod`
-- [ ] Install dev deps: `drizzle-kit`, `dotenv`
-- [ ] Create `.env` + `.env.example` with all keys (Clerk, Neon, Gemini, ImageKit, Unsplash, Sentry, Inngest, Google Maps)
-- [ ] Add Clerk + relevant config plugins to `app.json` (`@clerk/expo`, `expo-secure-store`, `expo-web-browser`, Sentry, `react-native-maps`)
-- [ ] Initialize Sentry (client in `_layout.tsx`; API route coverage once routes exist)
-- [ ] Set up `src/lib/env.ts` for typed env access
+- [~] Install Expo-native deps: `@sentry/react-native`, `expo-secure-store`, `expo-web-browser`, `expo-auth-session` installed; `react-native-maps`, `expo-crypto`, `expo-apple-authentication` still pending (native-only — see "Deferred until the native Android dev build succeeds")
+- [~] Install JS/server deps: `@clerk/expo`, `drizzle-orm`, `@neondatabase/serverless`, `inngest`, `svix`, `zod` installed; `@google/genai` (Gemini), `imagekit` still pending
+- [x] Install dev deps: `drizzle-kit`, `dotenv`
+- [x] `.env` populated with the current keys (Clerk, Sentry, DB, and the rest as needed); `.env.example` created and kept in sync
+- [~] Add Clerk + relevant config plugins to `app.json` — `@clerk/expo`, `expo-secure-store`, `expo-web-browser`, Sentry plugins are in; `react-native-maps` plugin still pending (package not installed yet)
+- [~] Initialize Sentry — client-side `Sentry.init`, error boundary wrap, and navigation tracking done in `_layout.tsx`; the new `+api.ts` routes (webhook, Inngest) don't report to Sentry yet; native crash reporting also pending the dev build
+- [~] Set up `src/lib/env.ts` for typed env access — created as a **server-only** module (`DATABASE_URL`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SIGNING_SECRET`), used by the new db/webhook/Inngest code; `_layout.tsx` / `sign-in.tsx` / `index.tsx` still read `process.env` directly for the client-safe `EXPO_PUBLIC_*` vars — a separate client-safe `env.ts` for those is still a gap
 - **DoD:** App boots on Android, iOS, and Web; server API route returns 200 on all three; Sentry receives a test event.
 
 ## Phase 1 — Auth & User Sync
 
 - [x] `ClerkProvider` + `tokenCache` wired into `src/app/_layout.tsx`
 - [~] Route protection: redirect signed-out → auth, signed-in → app — done via `(auth)/_layout.tsx` + root `src/app/index.tsx` (no `(home)` group yet; `index.tsx` shows a temporary placeholder since the real home screen isn't built — see Phase 4)
-- [x] Single auth screen (`(auth)/sign-in.tsx`) — **Google** + **Apple** both on one page via `useSSO` (inline in `sign-in.tsx`, not a separate `hooks/useSSOAuth.ts` — same behavior, different file layout)
+- [x] Single auth screen (`(auth)/sign-in.tsx`) — **Google** + **Apple** both on one page via `useSSO`, confirmed as the intended design (not two separate screens)
   - [x] **Google** (`oauth_google`) — confirmed working end-to-end on Android via Expo Go (2026-09-22, real sign-in with a Google account). Session persists across a full app restart (token cache confirmed working). iOS and Web not yet tested.
   - [ ] **Apple** (`oauth_apple`) — implemented, not yet tested on any platform
 - [x] Redirect URI / scheme (`triply`) for SSO — already set in `app.json`; `useSSO` uses `AuthSession.makeRedirectUri()` automatically, no extra config needed
-- [ ] Sign-out action (`(home)/index.tsx` via `useClerk().signOut`)
-- [ ] Clerk webhook API route (`/api/webhooks/clerk+api.ts`) verifying with `svix`
-- [ ] Webhook upserts `user.created` / `user.updated` → Neon `users`
-- [ ] Webhook handles `user.deleted` → remove/soft-delete user
+- [~] Sign-out action — implemented in `src/app/index.tsx` (the temporary placeholder screen, not `(home)/index.tsx` since that group doesn't exist yet) via `useClerk().signOut()`; passes `tsc`, not yet confirmed working in the running app
+- [x] Clerk webhook API route (`src/app/api/webhooks/clerk+api.ts`) verifying with `svix` — no official Expo Router adapter exists (per `clerk-webhooks` skill), so this verifies the raw body manually with `svix`'s `Webhook.verify()`, same as the framework adapters do internally
+- [x] Webhook syncs `user.created` → Neon `users` — implemented via an Inngest event (`clerk/user.created`) + function (`src/lib/inngest/functions/sync-user-creation.ts`) that inserts the row (`onConflictDoNothing`, so retried deliveries are safe). **Verified end-to-end 2026-09-22**: real Google sign-up → Clerk webhook (via ngrok dev tunnel) → `sync-user-creation` ran in the local Inngest dev server → row confirmed in Neon (`user_3JhFlc9OX8k1mERWs6fqVee7xvn`, correct email/name/image)
+- [x] Webhook syncs `user.updated` → Neon `users` — `clerk/user.updated` event + `src/lib/inngest/functions/sync-user-update.ts`, upserts (`onConflictDoUpdate`) rather than a plain update so it's still correct if delivery order is ever out of sequence. Code is live (app reports all 3 functions registered) but **not independently confirmed with an actual `user.updated` event yet** — only `user.created` and `user.deleted` have been proven with real Neon evidence so far
+- [x] Webhook handles `user.deleted` → remove user — `clerk/user.deleted` event + `src/lib/inngest/functions/sync-user-deletion.ts`, deletes by Clerk id. **Verified end-to-end 2026-09-22**: deleted a test user from the Clerk Dashboard, confirmed the corresponding row was removed from Neon's `users` table
 - [ ] Lazy-create fallback: first authed request upserts user if missing
-- **DoD:** Sign in with Google AND Apple on each platform that supports it; a `users` row appears in Neon via webhook; sign-out works.
+- **DoD:** Sign in with Google AND Apple on each platform that supports it; a `users` row appears in Neon via webhook; sign-out works. Google + webhook sync **verified working** (Android, 2026-09-22). Apple sign-in and sign-out still unverified.
 
 ## Phase 2 — Schema & Data Layer
 
-- [ ] Drizzle config (`drizzle.config.ts`) pointed at Neon
-- [ ] Neon serverless client (`src/db/index.ts`)
-- [ ] `users` table (Clerk userId PK, email, name, imageUrl, timestamps)
+- [x] Drizzle config (`drizzle.config.ts`) pointed at Neon (loads `DATABASE_URL` via `dotenv`, since `drizzle-kit` runs outside Expo/Metro's own env loading)
+- [x] Neon serverless client — at `src/lib/db/client.ts` (plan said `src/db/index.ts`; kept it under `src/lib/` to match `src/lib/env.ts` and `src/lib/inngest/`), `drizzle-orm/neon-http` + `@neondatabase/serverless`
+- [x] `users` table (Clerk userId PK, email, name, imageUrl, timestamps) — `src/lib/db/schema.ts`
 - [ ] `trips` table (userId FK, destination, startDate, numDays, numTravelers, budgetTier enum, interests, status enum, coverImageUrl, itinerary jsonb, budgetBreakdown jsonb, errorMessage, timestamps)
 - [ ] `chat_messages` table (tripId FK cascade, role, content, createdAt)
 - [ ] `generation_usage` table/counter (per user per day) for safety cap
 - [ ] Zod schemas / TS types for `itinerary` and `budgetBreakdown` jsonb shapes (`src/lib/itinerary.ts`)
-- [ ] Generate + run migrations against Neon (`db:push`)
+- [x] Generate + run migrations against Neon (`db:push`) — `npm run db:push` run (2026-09-22); confirmed via `information_schema` that `users` exists on Neon with the expected columns
 - [ ] Typed DB helpers, all scoped by authenticated `userId` (routes filter by `userId`; `src/lib/usage.ts`)
-- **DoD:** Migrations applied on Neon; helper can create/read a trip scoped to a user.
+- **DoD:** Migrations applied on Neon; helper can create/read a trip scoped to a user. **Partially met** — `users` table is live on Neon; no `trips` table yet, and the insert helper only exists inline in the Inngest function, not as a general typed helper.
 
 ## Phase 3 — Generation Pipeline
 
 - [ ] Generate-trip form screen: destination, travel start date, # days, # travelers, budget tier (Low/Med/Luxury), interests/style tags
 - [ ] Client-side validation of the form (button gated on destination + start date; server re-validates via Zod)
 - [ ] `POST /api/trips+api.ts`: auth → safety-cap check → create `trip` (status `pending`) → trigger Inngest event
-- [ ] Inngest client (`src/inngest/client.ts`) + endpoint route (`/api/inngest+api.ts`, `serve()` from `inngest/edge`)
+- [~] Inngest client (`src/lib/inngest/client.ts`) + endpoint route (`src/app/api/inngest+api.ts`, `serve()` from `inngest/edge`) — infra built in Phase 1 for user sync, and reused here; only `syncUserCreation` is registered so far, the `generate-trip` function below still needs to be added to the same `functions: []` list
 - [ ] Inngest `generate-trip` function:
   - [ ] Set status `generating`
   - [ ] Call **Gemini** with a structured itinerary schema (`src/lib/gemini.ts`) — confirm current model id + structured-output mechanism against docs at implementation time
