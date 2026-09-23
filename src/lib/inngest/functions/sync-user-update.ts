@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/lib/db/client";
@@ -13,6 +14,7 @@ const clerkUserUpdatedSchema = z.object({
   first_name: z.string().nullable(),
   last_name: z.string().nullable(),
   image_url: z.string().nullable(),
+  updated_at: z.number(), // epoch ms, from Clerk
 });
 
 export const syncUserUpdate = inngest.createFunction(
@@ -23,6 +25,7 @@ export const syncUserUpdate = inngest.createFunction(
     await step.run("upsert-user-in-neon", async () => {
       const name = [data.first_name, data.last_name].filter(Boolean).join(" ") || null;
       const email = data.email_addresses[0].email_address;
+      const updatedAt = new Date(data.updated_at);
 
       await db
         .insert(users)
@@ -31,6 +34,7 @@ export const syncUserUpdate = inngest.createFunction(
           email,
           name,
           imageUrl: data.image_url,
+          updatedAt,
         })
         // Upsert rather than a plain UPDATE: if `user.updated` somehow
         // arrives before/without a `user.created` (e.g. redelivery
@@ -42,8 +46,13 @@ export const syncUserUpdate = inngest.createFunction(
             email,
             name,
             imageUrl: data.image_url,
-            updatedAt: new Date(),
+            updatedAt,
           },
+          // Only apply the update if the existing row isn't tombstoned and
+          // this event is actually newer than what's stored — Svix doesn't
+          // guarantee delivery order, so a stale `user.updated` retry could
+          // otherwise overwrite newer data or resurrect a deleted user.
+          setWhere: sql`${users.deletedAt} is null and ${users.updatedAt} < ${updatedAt}`,
         });
     });
   },

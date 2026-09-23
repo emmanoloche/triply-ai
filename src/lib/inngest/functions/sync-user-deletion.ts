@@ -14,10 +14,12 @@ export const syncUserDeletion = inngest.createFunction(
   async ({ event, step }) => {
     const data = clerkUserDeletedSchema.parse(event.data);
 
-    await step.run("delete-user-from-neon", async () => {
-      // No error if the row is already gone — deleting a deleted user
-      // should be a no-op, not a failure (keeps retries/redeliveries safe).
-      await db.delete(users).where(eq(users.id, data.id));
+    await step.run("tombstone-user-in-neon", async () => {
+      // Soft delete rather than a hard DELETE: keeps the row so a stale,
+      // out-of-order `user.updated` redelivery can't resurrect it (see
+      // sync-user-update.ts's setWhere guard). No-op if the row is already
+      // gone or already tombstoned.
+      await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, data.id));
     });
   },
 );

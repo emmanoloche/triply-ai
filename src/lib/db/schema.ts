@@ -12,4 +12,8 @@ export const users = pgTable("users", {
   imageUrl: text("image_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  // Tombstone, not a hard delete: keeps the row so an out-of-order/redelivered
+  // `user.updated` webhook event can't resurrect a deleted user (see
+  // sync-user-update.ts's setWhere guard and sync-user-deletion.ts). null = active.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });

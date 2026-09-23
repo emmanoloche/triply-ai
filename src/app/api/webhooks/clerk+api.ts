@@ -15,6 +15,10 @@ const clerkUserSchema = z.object({
   first_name: z.string().nullable(),
   last_name: z.string().nullable(),
   image_url: z.string().nullable(),
+  // Epoch ms, per Clerk's UserJSON type. Zod strips unknown keys by default,
+  // so without this field it would silently never reach Inngest — needed by
+  // sync-user-update.ts to reject stale/out-of-order redeliveries.
+  updated_at: z.number(),
 });
 
 const clerkUserDeletedSchema = z.object({
