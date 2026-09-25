@@ -13,6 +13,7 @@ import { refundGeneration } from "@/lib/usage";
 // not something to show a user as-is. Unwrap it to the human-readable
 // message when possible, and fall back to the raw string otherwise (a DB or
 // network error won't be JSON shaped at all).
+/** Extracts a user-readable message from a Gemini or ordinary error. */
 function toUserMessage(error: Error): string {
   try {
     const parsed = JSON.parse(error.message) as { error?: { message?: string } };

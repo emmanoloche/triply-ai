@@ -60,6 +60,7 @@ const MONTH_NAMES = [
   "December",
 ];
 
+/** Compares a calendar day with today without using the current time of day. */
 function isBeforeToday(year: number, month: number, day: number, today: Date): boolean {
   const cell = new Date(year, month, day).getTime();
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
@@ -89,6 +90,7 @@ function toIsoDate(d: PickedDate): string {
 
 type DayCell = { day: number; key: string } | null;
 
+/** Builds padded Sunday-first weeks for the selected calendar month. */
 function getMonthWeeks(year: number, month: number): DayCell[][] {
   const startWeekday = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -103,6 +105,7 @@ function getMonthWeeks(year: number, month: number): DayCell[][] {
   return weeks;
 }
 
+/** Renders a single-choice row for budget or travel pace. */
 function SegmentedControl<T extends string>({
   options,
   value,
@@ -138,6 +141,7 @@ function SegmentedControl<T extends string>({
   );
 }
 
+/** Collects trip preferences and submits a new generation request. */
 export default function GenerateTrip() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -164,6 +168,7 @@ export default function GenerateTrip() {
   const weeks = getMonthWeeks(viewYear, viewMonth);
   const isViewingCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
 
+  /** Moves the calendar backward unless it is already showing this month. */
   const goPrevMonth = () => {
     if (isViewingCurrentMonth) return;
     if (viewMonth === 0) {
@@ -174,6 +179,7 @@ export default function GenerateTrip() {
     }
   };
 
+  /** Moves the calendar forward, crossing the year boundary if needed. */
   const goNextMonth = () => {
     if (viewMonth === 11) {
       setViewMonth(0);
@@ -186,6 +192,7 @@ export default function GenerateTrip() {
   const isBeyondMaxRange = (picked: PickedDate) =>
     startDate !== null && endDate === null && inclusiveDays(startDate, picked) > MAX_TRIP_DAYS;
 
+  /** Starts, clears, or completes the selected date range. */
   const handleDayPress = (day: number) => {
     if (isBeforeToday(viewYear, viewMonth, day, today)) return;
     const picked: PickedDate = { year: viewYear, month: viewMonth, day };
@@ -206,6 +213,7 @@ export default function GenerateTrip() {
     setEndDate(picked);
   };
 
+  /** Adds or removes an interest from the trip preferences. */
   const toggleInterest = (interest: string) => {
     setInterests((prev) =>
       prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest],
@@ -214,6 +222,7 @@ export default function GenerateTrip() {
 
   const isFormValid = destination.trim().length > 0;
 
+  /** Creates the trip and opens its generation progress screen. */
   const handleGenerate = async () => {
     if (!isFormValid || submitting) return;
     setSubmitting(true);

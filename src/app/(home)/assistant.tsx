@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 
 // Placeholder — UI design for this tab comes from design/assistant-screen-ui-design.png
 // and refine-ai-ui-design.png, not built yet (see plan.md Phase 4).
+/** Renders the placeholder for the future trip assistant tab. */
 export default function Assistant() {
   return (
     <View className="flex-1 items-center justify-center bg-white px-6">

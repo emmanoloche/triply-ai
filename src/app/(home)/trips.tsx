@@ -10,6 +10,7 @@ import { toCardData, type TripRow } from "@/lib/trips";
 
 // UI from design/trips-screen-ui-design.png.
 
+/** Lists ready trips and reloads them whenever the tab gains focus. */
 export default function Trips() {
   const insets = useSafeAreaInsets();
   const { getToken } = useAuth();

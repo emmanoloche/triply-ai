@@ -50,6 +50,7 @@ type Trip = {
   hotelSuggestions: HotelSuggestion[] | null;
 };
 
+/** Renders a circular button with a shared accessible label and style. */
 function RoundIconButton({
   onPress,
   accessibilityLabel,
@@ -77,6 +78,7 @@ function RoundIconButton({
   );
 }
 
+/** Displays one trip summary statistic with its icon and label. */
 function StatItem({ emoji, value, label }: { emoji: string; value: string; label: string }) {
   return (
     <View className="flex-1 items-center">
@@ -93,6 +95,7 @@ function StatItem({ emoji, value, label }: { emoji: string; value: string; label
   );
 }
 
+/** Expands an itinerary day to show its scheduled activities. */
 function DayCard({ day, defaultExpanded }: { day: ItineraryDay; defaultExpanded: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -136,6 +139,7 @@ function DayCard({ day, defaultExpanded }: { day: ItineraryDay; defaultExpanded:
   );
 }
 
+/** Loads a trip and presents its itinerary, budget, and cover controls. */
 export default function TripDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -174,6 +178,7 @@ export default function TripDetail() {
     };
   }, [id, getToken]);
 
+  /** Deletes this trip and navigates to the appropriate remaining view. */
   async function deleteTrip() {
     setDeleting(true);
     try {
@@ -201,6 +206,7 @@ export default function TripDetail() {
     }
   }
 
+  /** Confirms deletion with the platform's native dialog. */
   function confirmDelete() {
     const title = "Delete trip?";
     const message = "This can't be undone.";
@@ -218,6 +224,7 @@ export default function TripDetail() {
     ]);
   }
 
+  /** Picks a local photo, uploads it, and updates the trip cover. */
   async function pickAndReplaceCover() {
     if (Platform.OS !== "web") {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();

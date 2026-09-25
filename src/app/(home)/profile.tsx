@@ -6,11 +6,13 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 // Placeholder — UI design for this tab comes from design/profile-screen-ui-design1.png
 // and profile-screen-ui-design2.png, not built yet (see plan.md Phase 4). Sign-out is
 // carried over here from the old temporary root screen so it isn't lost.
+/** Shows the signed-in account and its sign-out action. */
 export default function Profile() {
   const { user } = useUser();
   const { signOut } = useClerk();
   const [signingOut, setSigningOut] = useState(false);
 
+  /** Signs out and reports any failure without leaving the screen busy. */
   const handleSignOut = async () => {
     setSigningOut(true);
     try {

@@ -10,6 +10,7 @@ const ROTATIONS = {
   down: "45deg",
 } as const;
 
+/** Draws a directional chevron with borders for consistent native rendering. */
 export function Chevron({
   direction,
   color = "#0A0A0A",

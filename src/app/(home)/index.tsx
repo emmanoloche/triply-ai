@@ -18,6 +18,7 @@ const CARD_GRADIENT_STYLE =
 
 type PopularDestination = { id: string; name: string; imageUrl: string; imageCredit: string; rating: number };
 
+/** Renders a destination photo with its city name and rating. */
 function DestinationCard({ destination }: { destination: PopularDestination }) {
   const city = destination.name.split(",")[0].trim();
   return (
@@ -36,6 +37,7 @@ function DestinationCard({ destination }: { destination: PopularDestination }) {
   );
 }
 
+/** Shows the user's latest trip and the shared popular destinations list. */
 export default function Home() {
   const { user } = useUser();
   const { getToken } = useAuth();
