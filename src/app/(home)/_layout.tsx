@@ -4,6 +4,7 @@ import { NativeTabs } from "expo-router/unstable-native-tabs";
 
 const BLUE = "#076FFA";
 
+/** Requires sign-in before showing the app's native home tabs. */
 export default function HomeLayout() {
   const { isLoaded, isSignedIn } = useAuth();
 

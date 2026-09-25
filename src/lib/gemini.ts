@@ -29,6 +29,7 @@ export type GenerateItineraryInput = {
   interests: string[];
 };
 
+/** Formats trip constraints and the required JSON shape for Gemini. */
 function buildPrompt(input: GenerateItineraryInput): string {
   const interestsLine = input.interests.length > 0 ? input.interests.join(", ") : "no particular preference";
 

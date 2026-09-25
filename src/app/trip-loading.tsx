@@ -49,6 +49,7 @@ const STEPS = [
 const STEP_SECONDS = 15;
 const MESSAGE_SECONDS = 4;
 
+/** Shows one visual stage of the simulated generation progress. */
 function StepDot({
   step,
   status,
@@ -89,6 +90,7 @@ function StepDot({
   );
 }
 
+/** Polls trip status and displays progress, success, or retry controls. */
 export default function TripLoading() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -112,6 +114,7 @@ export default function TripLoading() {
   useEffect(() => {
     pollingRef.current = true;
 
+    /** Polls until generation finishes or this screen unmounts. */
     const poll = async () => {
       while (pollingRef.current) {
         try {
@@ -156,6 +159,7 @@ export default function TripLoading() {
     };
   }, [id, router, getToken, pollGeneration]);
 
+  /** Restarts a failed trip generation and resumes status polling. */
   const handleRetry = async () => {
     if (retrying) return;
     setRetrying(true);

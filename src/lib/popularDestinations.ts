@@ -33,6 +33,7 @@ export const FALLBACK_DESTINATION_NAMES: PopularDestinationName[] = [
   { name: "Sydney, Australia" },
 ];
 
+/** Requests a varied list of destination names in the expected JSON shape. */
 function buildPrompt(count: number): string {
   return `You are a well-traveled travel editor. Name ${count} genuinely popular, well-known international travel destinations that people actually visit right now — a mix of cities, regions, and iconic landmarks, varied across continents. Don't just repeat the same 3-4 most obvious ones.
 

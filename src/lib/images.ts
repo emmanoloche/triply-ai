@@ -36,6 +36,7 @@ async function withRetries<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 
   throw lastError;
 }
 
+/** Searches Unsplash for one landscape photo and its photographer credit. */
 async function unsplashSearch(query: string): Promise<UnsplashPhoto | null> {
   const url = new URL("https://api.unsplash.com/search/photos");
   url.searchParams.set("query", query);

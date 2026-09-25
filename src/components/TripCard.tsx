@@ -18,6 +18,7 @@ export type TripCardData = {
   imageUrl: string | null;
 };
 
+/** Renders a trip preview that opens the matching trip detail screen. */
 export function TripCard({ trip }: { trip: TripCardData }) {
   const router = useRouter();
 

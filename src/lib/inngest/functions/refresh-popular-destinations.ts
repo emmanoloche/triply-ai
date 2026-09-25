@@ -6,6 +6,7 @@ import { FALLBACK_DESTINATION_NAMES, fetchPopularDestinationNames } from "@/lib/
 
 const DESTINATION_COUNT = 6;
 
+/** Converts a destination name to a URL-safe image filename prefix. */
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -15,6 +16,7 @@ function slugify(name: string): string {
 
 // Cosmetic only — there's no real per-destination rating data anywhere in
 // this pipeline. See the `rating` column comment in db/schema.ts.
+/** Generates a display-only rating between 4.7 and 4.9. */
 function randomRating(): number {
   return Math.round((4.7 + Math.random() * 0.2) * 10) / 10;
 }
