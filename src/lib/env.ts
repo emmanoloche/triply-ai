@@ -29,4 +29,10 @@ export const env = {
   // Not required at import time — the webhook route checks this itself and
   // returns a clear 500 if it's missing, instead of crashing on load.
   CLERK_WEBHOOK_SIGNING_SECRET: process.env.CLERK_WEBHOOK_SIGNING_SECRET,
+  UNSPLASH_ACCESS_KEY: required("UNSPLASH_ACCESS_KEY", process.env.UNSPLASH_ACCESS_KEY),
+  IMAGEKIT_PRIVATE_KEY: required("IMAGEKIT_PRIVATE_KEY", process.env.IMAGEKIT_PRIVATE_KEY),
+  IMAGEKIT_URL_ENDPOINT: required("IMAGEKIT_URL_ENDPOINT", process.env.IMAGEKIT_URL_ENDPOINT),
+  // Not required at import time — genuinely unset until you add it (see
+  // src/lib/gemini.ts, which throws a clear error at call time instead).
+  GOOGLE_GENAI_API_KEY: process.env.GOOGLE_GENAI_API_KEY,
 } as const;

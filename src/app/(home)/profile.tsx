@@ -1,18 +1,18 @@
-import { useAuth, useClerk, useUser } from "@clerk/expo";
+import { useClerk, useUser } from "@clerk/expo";
 import * as Sentry from "@sentry/react-native";
-import { Redirect } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
-export default function Index() {
-  const { isLoaded, isSignedIn } = useAuth();
+// Placeholder — UI design for this tab comes from design/profile-screen-ui-design1.png
+// and profile-screen-ui-design2.png, not built yet (see plan.md Phase 4). Sign-out is
+// carried over here from the old temporary root screen so it isn't lost.
+/** Shows the signed-in account and its sign-out action. */
+export default function Profile() {
   const { user } = useUser();
   const { signOut } = useClerk();
   const [signingOut, setSigningOut] = useState(false);
 
-  if (!isLoaded) return null;
-  if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
-
+  /** Signs out and reports any failure without leaving the screen busy. */
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
@@ -23,10 +23,9 @@ export default function Index() {
     }
   };
 
-  // Temporary placeholder — the real home screen isn't built yet.
   return (
     <View className="flex-1 items-center justify-center bg-white px-6">
-      <Text className="text-center text-lg font-semibold">
+      <Text className="text-center text-lg font-semibold text-[#0A0A0A]">
         Signed in as {user?.primaryEmailAddress?.emailAddress ?? user?.id}
       </Text>
 
@@ -39,11 +38,7 @@ export default function Index() {
           signingOut ? "opacity-60" : ""
         }`}
       >
-        {signingOut ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text className="text-[15px] font-medium text-white">Sign out</Text>
-        )}
+        {signingOut ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-[15px] font-medium text-white">Sign out</Text>}
       </Pressable>
     </View>
   );

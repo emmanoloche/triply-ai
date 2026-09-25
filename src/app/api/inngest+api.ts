@@ -1,6 +1,8 @@
 import { serve } from "inngest/edge";
 
+import { generateTrip } from "@/lib/inngest/functions/generate-trip";
 import { inngest } from "@/lib/inngest/client";
+import { refreshPopularDestinations } from "@/lib/inngest/functions/refresh-popular-destinations";
 import { syncUserCreation } from "@/lib/inngest/functions/sync-user-creation";
 import { syncUserDeletion } from "@/lib/inngest/functions/sync-user-deletion";
 import { syncUserUpdate } from "@/lib/inngest/functions/sync-user-update";
@@ -11,7 +13,7 @@ import { syncUserUpdate } from "@/lib/inngest/functions/sync-user-update";
 // adapter targets (confirmed against Expo's own API routes docs).
 const handler = serve({
   client: inngest,
-  functions: [syncUserCreation, syncUserUpdate, syncUserDeletion],
+  functions: [syncUserCreation, syncUserUpdate, syncUserDeletion, generateTrip, refreshPopularDestinations],
 });
 
 export { handler as GET, handler as POST, handler as PUT };
