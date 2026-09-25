@@ -8,7 +8,7 @@ import { tryConsumeGeneration } from "@/lib/usage";
 
 // Re-fires generation for an existing failed trip, reusing the destination/
 // dates/etc. already stored on the row — the point is the user shouldn't
-// have to retype the whole form just because Gemini was temporarily
+// have to retype the whole form just because the AI provider was temporarily
 // overloaded (503). Only `failed` trips can be retried, and it still goes
 // through the same usage cap as a fresh submission (the original attempt's
 // quota was already refunded on failure, so this is a new attempt).
@@ -36,7 +36,8 @@ export async function POST(request: Request, { id }: Record<string, string>) {
     return Response.json({ error: "Daily generation limit reached. Try again tomorrow." }, { status: 429 });
   }
 
-  await db.update(trips).set({ status: "pending", errorMessage: null }).where(eq(trips.id, id));
+  // updatedAt restarts the in-flight clock (see STALE_IN_FLIGHT_MS in trips+api.ts).
+  await db.update(trips).set({ status: "pending", errorMessage: null, updatedAt: new Date() }).where(eq(trips.id, id));
 
   await inngest.send({
     name: "trip/generate",

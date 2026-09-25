@@ -66,6 +66,9 @@ export default function Home() {
           if (!cancelled) setTrips(data);
         } catch (err) {
           Sentry.captureException(err);
+          Sentry.logger.error("Home failed to load recent trips", {
+            error_message: err instanceof Error ? err.message : String(err),
+          });
           if (!cancelled) setTrips((prev) => prev ?? []);
         } finally {
           if (!cancelled) setLoading(false);
@@ -99,6 +102,9 @@ export default function Home() {
         if (!cancelled) setDestinations(data);
       } catch (err) {
         Sentry.captureException(err);
+        Sentry.logger.error("Home failed to load popular destinations", {
+          error_message: err instanceof Error ? err.message : String(err),
+        });
         if (!cancelled) setDestinations((prev) => prev ?? []);
       } finally {
         if (!cancelled) setDestinationsLoading(false);

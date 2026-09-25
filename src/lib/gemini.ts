@@ -1,90 +1,29 @@
 import { GoogleGenAI } from "@google/genai";
 
 import { env } from "@/lib/env";
-import { tripGenerationSchema, type TripGeneration } from "@/lib/itinerary";
+import type { ChatTurn } from "@/lib/llm";
 
-// "gemini-2.0-flash" (what the installed @google/genai package's own bundled
-// JSDoc examples used) turned out to be stale — the live API rejected it
-// with a 404 naming "gemini-3.6-flash" as the replacement (confirmed
-// 2026-09-23). That one then hit its free-tier daily quota (confirmed via a
-// real 429: "limit: 20, model: gemini-3.6-flash") and separately its own
-// 503 high-demand errors — both real, not guessed. Quota is tracked
-// per-model (the 429's metric name includes the model), so switching models
-// gets a fresh, unused quota. Checked what's actually available via
-// `client.models.list()` and tried several real candidates against the live
-// API (2026-09-24): "gemini-3.8-flash" (newest) was 503-overloaded,
-// "gemini-2.5-flash"/"gemini-2.5-flash-lite" are fully retired for new
-// users, but "gemini-3.5-flash-lite" succeeded. It's a "lite" model — likely
-// somewhat less capable than a full "flash" tier model, worth watching
-// itinerary quality on. Revisit if this one also starts hitting limits.
-const MODEL = "gemini-3.5-flash-lite";
+// Gemini is the fallback provider (OpenAI is primary — see src/lib/llm.ts).
+//
+// Model notes, learned against the live API: "gemini-2.0-flash" (what the
+// installed package's own JSDoc examples used) was stale — the API rejected it
+// with a 404 naming a successor. Free-tier quota is tracked per model (a real
+// 429 named the model in its metric), so different features use different
+// models to keep one from eating the other's daily allowance. Newest models
+// (e.g. "gemini-3.8-flash") were frequently 503-overloaded; "lite" variants and
+// slightly older ones were steadier. Re-check with `client.models.list()` if
+// one starts failing.
 
-export type GenerateItineraryInput = {
-  destination: string;
-  startDate: string; // YYYY-MM-DD
-  numDays: number;
-  numTravelers: number;
-  budgetTier: "budget" | "comfort" | "luxury";
-  pace: "relaxed" | "balanced" | "fast";
-  interests: string[];
-};
-
-/** Formats trip constraints and the required JSON shape for Gemini. */
-function buildPrompt(input: GenerateItineraryInput): string {
-  const interestsLine = input.interests.length > 0 ? input.interests.join(", ") : "no particular preference";
-
-  return `You are a professional travel planner. Create a detailed ${input.numDays}-day itinerary for a trip to ${input.destination}, starting ${input.startDate}, for ${input.numTravelers} traveler(s).
-
-Budget tier: ${input.budgetTier} (budget = backpacker/cheap, comfort = mid-range, luxury = high-end).
-Travel pace: ${input.pace} (relaxed = 2-3 activities/day, balanced = 3-4, fast = 5+).
-Interests: ${interestsLine}.
-
-Respond with ONLY a JSON object matching exactly this shape, no markdown fences, no commentary:
-
-{
-  "summary": string (2-3 sentence trip overview),
-  "days": [
-    {
-      "day": number (1-indexed),
-      "title": string (short theme for the day),
-      "activities": [
-        {
-          "time": string (e.g. "09:00"),
-          "title": string,
-          "description": string (1-2 sentences),
-          "category": one of "food" | "sightseeing" | "activity" | "transport" | "accommodation" | "shopping" | "nightlife" | "other",
-          "location": string (optional, place name),
-          "lat": number (optional, approximate),
-          "lng": number (optional, approximate)
-        }
-      ]
-    }
-  ],
-  "budgetBreakdown": {
-    "currency": string (e.g. "USD"),
-    "accommodation": number (total for the trip, per person),
-    "food": number,
-    "transport": number,
-    "activities": number,
-    "misc": number,
-    "total": number
-  },
-  "hotelSuggestions": [
-    { "name": string, "description": string, "priceRange": string (e.g. "$120-180/night") }
-  ]
-}
-
-Every day from 1 to ${input.numDays} must be present. Budget numbers must be realistic for the destination and tier, and must sum correctly (accommodation + food + transport + activities + misc = total).`;
-}
+/** Model for trip itineraries. */
+export const GEMINI_ITINERARY_MODEL = "gemini-3.5-flash-lite";
+/** Separate model for popular destinations so its quota is independent. */
+export const GEMINI_DESTINATIONS_MODEL = "gemini-3.6-flash";
 
 /**
- * Calls Gemini and returns a validated itinerary. Throws on any failure —
- * network error, non-JSON response, or a response that fails
- * `tripGenerationSchema` — so the caller (the Inngest function) can let
- * Inngest's normal retry behavior handle it. Never returns unvalidated data;
- * per AGENTS.md, LLM JSON is never trusted as-is.
+ * Asks Gemini for a JSON object and returns the raw text (parsing and
+ * validation happen in src/lib/llm.ts). Throws on any failure.
  */
-export async function generateItinerary(input: GenerateItineraryInput): Promise<TripGeneration> {
+export async function generateWithGemini(prompt: string, temperature: number, model: string): Promise<string> {
   if (!env.GOOGLE_GENAI_API_KEY) {
     throw new Error(
       "Missing GOOGLE_GENAI_API_KEY — get one from https://aistudio.google.com/apikey and add it to .env",
@@ -94,17 +33,15 @@ export async function generateItinerary(input: GenerateItineraryInput): Promise<
   const client = new GoogleGenAI({ apiKey: env.GOOGLE_GENAI_API_KEY });
 
   const response = await client.models.generateContent({
-    model: MODEL,
-    contents: buildPrompt(input),
+    model,
+    contents: prompt,
     config: {
       responseMimeType: "application/json",
-      temperature: 0.8,
-      // Without this, a genuine network hang (Gemini accepts the connection
-      // but never responds — different from a fast 503 rejection) leaves the
-      // Inngest step waiting forever, since nothing ever throws to trigger a
-      // retry. Confirmed this actually happens, not just theoretical: a real
-      // run sat in `generating` for 7+ minutes with no error, far past the
-      // ~3 minute pattern every fast-failing 503 has shown so far.
+      temperature,
+      // Without this, a genuine network hang (accepts the connection but never
+      // responds — different from a fast 503) leaves the Inngest step waiting
+      // forever, since nothing throws to trigger a retry. Confirmed real: a run
+      // once sat in `generating` for 7+ minutes with no error.
       httpOptions: { timeout: 60_000 },
     },
   });
@@ -113,15 +50,49 @@ export async function generateItinerary(input: GenerateItineraryInput): Promise<
   if (!text) {
     throw new Error("Gemini returned an empty response");
   }
+  return text;
+}
 
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`Gemini response was not valid JSON: ${(err as Error).message}`);
+/** Separate model for the assistant chat, so its quota is independent too. */
+export const GEMINI_CHAT_MODEL = "gemini-flash-lite-latest";
+
+/**
+ * Multi-turn plain-text chat reply, yielded piece by piece as Gemini produces
+ * it. Gemini wants alternating user/model turns starting with the user, so
+ * consecutive turns from the same side (e.g. after a failed send) are merged
+ * into one.
+ */
+export async function* streamChatWithGemini(
+  system: string,
+  turns: ChatTurn[],
+  temperature: number,
+): AsyncGenerator<string> {
+  if (!env.GOOGLE_GENAI_API_KEY) {
+    throw new Error(
+      "Missing GOOGLE_GENAI_API_KEY — get one from https://aistudio.google.com/apikey and add it to .env",
+    );
   }
 
-  // Never trust LLM JSON — this is the actual safety net, independent of
-  // whatever Gemini claims to have followed in the prompt.
-  return tripGenerationSchema.parse(parsedJson);
+  const contents: { role: "user" | "model"; parts: { text: string }[] }[] = [];
+  for (const turn of turns) {
+    const role = turn.role === "assistant" ? "model" : "user";
+    const last = contents[contents.length - 1];
+    if (last && last.role === role) {
+      last.parts[0].text += `\n\n${turn.content}`;
+    } else {
+      contents.push({ role, parts: [{ text: turn.content }] });
+    }
+  }
+
+  const client = new GoogleGenAI({ apiKey: env.GOOGLE_GENAI_API_KEY });
+  const stream = await client.models.generateContentStream({
+    model: GEMINI_CHAT_MODEL,
+    contents,
+    config: { systemInstruction: system, temperature, httpOptions: { timeout: 30_000 } },
+  });
+
+  for await (const chunk of stream) {
+    const piece = chunk.text;
+    if (piece) yield piece;
+  }
 }

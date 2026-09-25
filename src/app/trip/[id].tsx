@@ -167,6 +167,10 @@ export default function TripDetail() {
         if (!cancelled) setTrip(data);
       } catch (err) {
         Sentry.captureException(err);
+        Sentry.logger.error("Trip detail failed to load", {
+          trip_id: id,
+          error_message: err instanceof Error ? err.message : String(err),
+        });
         if (!cancelled) setError("Couldn't load this trip.");
       } finally {
         if (!cancelled) setLoading(false);
@@ -189,11 +193,16 @@ export default function TripDetail() {
       });
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
       const data = (await res.json()) as { remainingTrips: number };
+      Sentry.logger.info("Trip deleted", { trip_id: id, remaining_trips: data.remainingTrips });
       // Last trip just got deleted — send them to Home's "generate a trip"
       // CTA instead of an empty Trips list.
       router.replace(data.remainingTrips > 0 ? "/trips" : "/");
     } catch (err) {
       Sentry.captureException(err);
+      Sentry.logger.error("Trip delete failed", {
+        trip_id: id,
+        error_message: err instanceof Error ? err.message : String(err),
+      });
       setDeleting(false);
       // Alert.alert is a no-op on web (react-native-web), so fall back to
       // window.confirm/alert there — both are the platform's own native
@@ -251,20 +260,37 @@ export default function TripDetail() {
 
     setUploadingCover(true);
     try {
-      const token = await getToken();
-      const res = await fetch(`/api/trips/${id}/cover`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const base64 = asset.base64;
+      // The request itself is traced automatically; this span adds the
+      // payload size, which is what drives upload time on a slow connection.
+      const data = await Sentry.startSpan(
+        {
+          name: "Upload trip cover",
+          op: "trip.cover.upload",
+          attributes: { trip_id: id, payload_base64_chars: base64.length },
         },
-        body: JSON.stringify({ base64: asset.base64, mimeType: asset.mimeType ?? "image/jpeg" }),
-      });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      const data = (await res.json()) as { coverImageUrl: string };
+        async () => {
+          const token = await getToken();
+          const res = await fetch(`/api/trips/${id}/cover`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ base64, mimeType: asset.mimeType ?? "image/jpeg" }),
+          });
+          if (!res.ok) throw new Error(`Request failed (${res.status})`);
+          return (await res.json()) as { coverImageUrl: string };
+        },
+      );
+      Sentry.logger.info("Trip cover photo replaced", { trip_id: id });
       setTrip((prev) => (prev ? { ...prev, coverImageUrl: data.coverImageUrl, coverImageCredit: null } : prev));
     } catch (err) {
       Sentry.captureException(err);
+      Sentry.logger.error("Trip cover photo upload failed", {
+        trip_id: id,
+        error_message: err instanceof Error ? err.message : String(err),
+      });
       const message = "Couldn't update the cover photo. Try again.";
       if (Platform.OS === "web") {
         window.alert(message);

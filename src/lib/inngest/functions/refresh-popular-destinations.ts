@@ -32,7 +32,7 @@ function randomRating(): number {
  * skipped rather than failing the whole refresh — unlike a trip's cover
  * image (tied to one user's paid-for generation), losing one row out of six
  * here is a minor, low-stakes miss, not worth retrying the entire function
- * (and re-spending five other Gemini/Unsplash/ImageKit calls) over.
+ * (and re-spending five other AI/Unsplash/ImageKit calls) over.
  *
  * Uses two separate writes (delete, then insert) rather than a transaction
  * — the neon-http driver this project uses doesn't support interactive
@@ -40,9 +40,9 @@ function randomRating(): number {
  * two; acceptable for data that only changes every couple of days on a
  * schedule, not in response to user traffic.
  *
- * If Gemini can't produce a list at all, falls back to a small hardcoded
- * set of well-known destinations (FALLBACK_DESTINATION_NAMES) rather than
- * retrying the whole function against an already-struggling model — real
+ * If neither OpenAI nor Gemini can produce a list, falls back to a small
+ * hardcoded set of well-known destinations (FALLBACK_DESTINATION_NAMES)
+ * rather than retrying the whole function against struggling models — real
  * photos are still fetched for those names the normal way, so even the
  * worst case still looks like a real, populated row.
  */
@@ -53,7 +53,7 @@ export const refreshPopularDestinations = inngest.createFunction(
       try {
         return await fetchPopularDestinationNames(DESTINATION_COUNT);
       } catch (err) {
-        console.error("Gemini failed to produce popular destinations, using fallback list:", err);
+        console.error("Neither OpenAI nor Gemini produced popular destinations, using fallback list:", err);
         return FALLBACK_DESTINATION_NAMES;
       }
     });

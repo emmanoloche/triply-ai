@@ -22,7 +22,7 @@ AI trip planner for **Android, iOS and Web** (Expo SDK 57). The user enters trip
 | Background jobs | **Inngest** (durable trip generation with retries) |
 | Image optimization | **ImageKit** |
 | Error tracking / monitoring | **Sentry** (`@sentry/react-native`) |
-| AI | Google Gemini (`@google/genai`). Do not use OpenAI or Anthropic SDKs |
+| AI | **OpenAI (`openai`) is the primary provider; Google Gemini (`@google/genai`) is the automatic fallback.** All calls go through `src/lib/llm.ts`, never directly from features. Do not use the Anthropic SDK |
 | Maps | `react-native-maps` (native only, omitted on Web) |
 
 Do not add dependencies outside this list without asking.
@@ -49,7 +49,7 @@ This project **always uses native tabs**. Never build a JavaScript tab bar and n
 
 - Path alias: `@/*` maps to `src/*`. Use it instead of deep relative imports.
 - React Compiler is on: do not add `useMemo`, `useCallback` or `React.memo` by hand.
-- Validate all API input and all Gemini output with Zod. Never trust LLM JSON.
+- Validate all API input and all LLM output (OpenAI and Gemini) with Zod. Never trust LLM JSON.
 - Every DB query is scoped by the authenticated Clerk `userId`.
 - Env access goes through `src/lib/env.ts`. Secrets must never use the `EXPO_PUBLIC_` prefix. Never commit `.env`; keep `.env.example` current.
 - Report errors to Sentry on the client and in API routes. Inngest failures end in trip status `failed` with an `errorMessage`.

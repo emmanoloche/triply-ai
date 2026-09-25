@@ -1,4 +1,16 @@
-import { date, integer, jsonb, pgEnum, pgTable, primaryKey, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  date,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import type { BudgetBreakdown, HotelSuggestion, ItineraryDay } from "@/lib/itinerary";
 
@@ -75,6 +87,27 @@ export const popularDestinations = pgTable("popular_destinations", {
   rank: integer("rank").notNull(),
   refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * The Assistant tab's conversation, one row per message, private to each user.
+ * A question and its answer are saved together only once the answer has fully
+ * arrived (see api/assistant+api.ts), so a failed or interrupted reply leaves
+ * no half-finished turn behind. "Clear conversation" deletes every row for the
+ * user. Rows go away with the user (cascade).
+ */
+export const assistantMessages = pgTable(
+  "assistant_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").$type<"user" | "assistant">().notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("assistant_messages_user_created_idx").on(table.userId, table.createdAt)],
+);
 
 /**
  * Per-user, per-day counter backing the 20-generations/day safety cap (see

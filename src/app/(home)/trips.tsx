@@ -38,6 +38,9 @@ export default function Trips() {
       setTrips(data);
     } catch (err) {
       Sentry.captureException(err);
+      Sentry.logger.error("Trips list failed to load", {
+        error_message: err instanceof Error ? err.message : String(err),
+      });
       setError("Couldn't load your trips. Pull to refresh or reopen this tab to try again.");
     } finally {
       setLoading(false);

@@ -4,8 +4,9 @@
 > Check items off (`[x]`) as they're completed. Full spec lives at the bottom.
 >
 > Structure mirrors a tutorial's own build plan, adapted for two real differences: this app targets
-> **Android + iOS + Web** (not iOS-only), and uses **Gemini** for all generation (not OpenAI — no
-> paid OpenAI plan available).
+> **Android + iOS + Web** (not iOS-only), and uses **OpenAI as the primary model with Gemini as the
+> automatic fallback** for all generation (started Gemini-only; OpenAI added 2026-09-25 — see the
+> "AI providers" item under Phase 3).
 
 ---
 
@@ -92,6 +93,7 @@ Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not 
 - [x] Gemini call has a request timeout (`httpOptions.timeout: 60_000` in `src/lib/gemini.ts`) — found and fixed 2026-09-24 after a real run hung 9+ minutes in `generating` with the Inngest dev server confirmed still running: a genuine network hang (connection accepted, no response ever sent) is different from a fast `503` rejection and was never throwing, so nothing triggered retry/failure. The already-stuck row from that incident was cleaned up manually (marked `failed`, quota refunded) since the fix only prevents it going forward.
 - [x] Activity `category` validation falls back to `"other"` instead of failing the whole generation (`activityCategorySchema.catch("other")` in `src/lib/itinerary.ts`) — found 2026-09-24 via a real `ZodError` (Gemini returned a category outside the 8-value enum); verified the `.catch()` fallback actually works against this installed Zod version before trusting it.
 - [x] Model switched `gemini-2.0-flash` → `gemini-3.6-flash` → **`gemini-3.5-flash-lite`** (`src/lib/gemini.ts`) — `gemini-3.6-flash` hit its free-tier daily quota for real (confirmed 429: `limit: 20, model: gemini-3.6-flash`) after a day of heavy testing/retries, then also started 503'ing. Since the quota metric name includes the model, quota is tracked **per model** — confirmed by listing all available models via `client.models.list()` and testing real candidates live: `gemini-3.8-flash` (newest) was 503-overloaded, `gemini-2.5-flash`/`gemini-2.5-flash-lite` are fully retired for new users, `gemini-3.5-flash-lite` succeeded with fresh quota. Caveat: it's a "lite" model, likely somewhat less capable — watch itinerary quality on the next real run.
+- [x] **AI providers: OpenAI primary, Gemini fallback** (2026-09-25). `src/lib/llm.ts` → `generateValidatedJson()` tries OpenAI (`src/lib/openai.ts`, model `gpt-5.4-mini`, JSON mode, 60s timeout, 1 SDK retry) and, if it fails for any reason (network, rate limit, outage, or output failing the Zod schema), sends the same prompt to Gemini (`src/lib/gemini.ts`). Both must fail before the caller sees an error, and the user-facing message is plain ("The AI service is temporarily unavailable…") with the real causes in the server log. Used by itinerary generation (`src/lib/tripGeneration.ts`, previously in `gemini.ts`) and popular destinations (`src/lib/popularDestinations.ts`, whose last resort after both providers is the hardcoded city list). Model id chosen from `client.models.list()` on the actual key and confirmed live (JSON mode + temperature). Verified with a real run: OpenAI returned a schema-valid 2-day itinerary in ~7s; with a deliberately bad key the code fell back to Gemini (which was itself 503 at that moment, so a successful Gemini fallback response has not been observed yet). Needs `OPENAI_API_KEY` in `.env` (documented in `.env.example`); either key may be absent and the other still works. The Inngest step is now `generate-itinerary` (was `call-gemini`).
 - [x] At most one generation in flight per user — `POST /api/trips+api.ts` checks for an existing `pending`/`generating` trip before creating a new one; if found, returns that trip's id (`reused: true`) instead of starting a second, and the client shows an explicit "already generating" message rather than silently redirecting to a different trip than the one just submitted. Enforced server-side (not just disabling the button client-side), since the client can't be trusted alone. Deliberately *prevents* duplicates rather than cancelling an in-progress one on navigate-away — cancelling was considered and rejected: "leaving the loading screen" isn't reliably the same as "abandoning the trip" (backgrounding the app, a tab switch, etc. would falsely trigger it), so it risked killing generations the user still wanted.
 - [x] Unsplash cover search falls back "City, Country" → city alone → country alone (`src/lib/images.ts`) — found and fixed 2026-09-24 after a real trip (Makurdi, Nigeria) came back `ready` with no cover image. Confirmed directly against the live Unsplash API: `"Makurdi, Nigeria"` → 0 results, `"Nigeria"` alone → 2590 — the combined query was too narrow for a sparsely-tagged smaller city, not a lack of any coverage at all. The one already-affected trip was backfilled manually with the same fallback logic.
 - [x] Run against **local Inngest dev server** (no EAS Hosting in v1) — `expo start` (all platforms) + `npx inngest-cli dev`. Exercised for real on 2026-09-23 across three runs: (1) stale model id → `failed`, fixed same day; (2) real Gemini `503 UNAVAILABLE` (Google's servers temporarily overloaded, not our bug) → correctly retried, then `failed` with a clean error message and refunded quota; (3) **succeeded** — a real trip (Lagos, Nigeria, 4 days) reached `ready` with a 4-day itinerary, a budget breakdown that sums correctly (100+60+40+25+15=240=total), and a real ImageKit cover image URL, all confirmed directly in Neon (not just the on-screen result). Android only so far.
@@ -106,14 +108,16 @@ Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not 
 - [x] Hotel suggestions section — plain card list (not styled to a specific design reference, none provided for this section specifically)
 - [x] Budget breakdown section — also surfaced as the 3 stat circles (duration/travelers/budget) at the top of the detail screen, matching the design
 - [ ] Map with place pins (LLM lat/lng) — **native only** (Android/iOS via `react-native-maps`); hidden/omitted on Web. Deliberately a placeholder card on the detail screen right now (`react-native-maps` isn't installed — native-only, can't run in Expo Go, needs a Google Maps API key — all already tracked in "Deferred until the native Android dev build succeeds")
-- [ ] Delete trip (`DELETE /api/trips/[id]+api.ts`) → cascade chat + cleanup — not built yet
+- [x] Delete trip — `DELETE /api/trips/[id]+api.ts` (scoped to the owner; returns `remainingTrips` so the app goes to Home if it was the last one) behind a trash icon + native confirm dialog on the detail screen. Chat cleanup isn't relevant yet (chat history isn't persisted).
+- [x] Change trip cover photo — camera icon on the detail screen → gallery (`expo-image-picker`) → `PATCH /api/trips/[id]/cover+api.ts` → ImageKit with a delivery transform (`w-1600,q-75`); clears the Unsplash credit.
+- [x] **Assistant tab** (general travel chat, not tied to a trip) — UI from `design/assistant-screen-ui-design.png` (`src/app/(home)/assistant.tsx`, colors sampled from the design) + `POST /api/assistant+api.ts` (auth required, Zod-validated, max 20 turns / 2000 chars each, plain text replies via `streamChatReply` — OpenAI primary, Gemini fallback, separate Gemini model for quota). Verified on device: replies come back in ~6s. **Streaming (2026-09-25):** replies now stream in piece by piece — the route returns a plain-text stream (`streamChatReply` in `src/lib/llm.ts`; the Gemini fallback only applies if OpenAI fails *before* its first text, since a reply can't switch models mid-sentence), the app reads it with `expo/fetch` (the global fetch can't read streams and `expo/fetch` needs an absolute URL, built from `location.origin`). Chat runs OpenAI with `reasoning_effort: "none"` (~0.9s to first text vs 1.8-7s). If the app disconnects the AI stream is cancelled. **History is saved (2026-09-25):** new `assistant_messages` table (per user, cascade on user delete). `GET /api/assistant` loads it when the screen opens, `POST` takes only the new message and builds the model context from the user's own last 20 saved messages (the client can't inject a fake history), and saves the question + answer together only once the answer has fully arrived (failed/interrupted/abandoned replies save nothing). The trash button asks for confirmation, then `DELETE /api/assistant` removes all of the user's messages; the screen only clears after the delete succeeds, and the button is disabled while a reply is being written. **Not done:** no per-user daily cap on chat messages yet (cost risk), no retention limit on old messages. Lessons from getting it working: (1) after `npm install`, Metro can keep a stale file index and fail to bundle API routes (`ws/index.js` "missing") until restarted with `npx expo start -c`; (2) hiding the native tab bar while the keyboard is open (`NativeTabs hidden`) made taps on the send button miss on Android — the plain setup (tab bar stays above the keyboard) works and is what's in place.
 - [x] Empty state for no trips — Trips tab shows a message pointing back to Home
 - **DoD:** A generated trip renders fully (itinerary/places/hotels/budget/cover) on all three platforms, plus the map on Android/iOS; delete removes it everywhere. **Partially met** — renders fully on Android (not yet pixel-compared to the design); iOS untestable (no Mac); Web untested; map is a placeholder; delete not built.
 
 ## Phase 5 — AI Chat Refine
 
 - [ ] Chat UI on trip detail (message list + input)
-- [ ] `POST /api/trips/[id]/chat+api.ts`: synchronous **Gemini** call returning **targeted edits**
+- [ ] `POST /api/trips/[id]/chat+api.ts`: synchronous LLM call (via `generateValidatedJson` — OpenAI primary, Gemini fallback) returning **targeted edits**
 - [ ] Apply edits to `itinerary` jsonb in place
 - [ ] Persist user + assistant `chat_messages`
 - [ ] Load chat history on open; context carries across sessions
@@ -149,7 +153,7 @@ Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not 
 - **R3** Maps only render on Android/iOS; Web trip-detail view has no map — confirm that gap is acceptable for v1.
 - **R4** Android map support needs a **Google Maps API key** (billing-enabled Google Cloud project) — a new external dependency/setup step beyond what iOS needs (Apple Maps is free/keyless).
 - **R5** DB polling during loading is chatty; tune interval/backoff if generation is slow.
-- **R6** Gemini's structured-output JSON may violate schema → rely on Zod validation + Inngest retry/`failed` path.
+- **R6** LLM structured-output JSON may violate schema → Zod validation in `src/lib/llm.ts` (a schema failure on OpenAI triggers the Gemini fallback), then Inngest retry/`failed` path.
 - **R7** Unsplash attribution/ToS for storing+serving photos via ImageKit must be checked.
 - **R8** Soft cap only (20/day) — an abuser within that limit still costs money; rely on Sentry alerts.
 - **R9** Apple Sign-In behaves differently per platform (native on iOS, hosted-browser on Web, no native Android equivalent) — needs explicit testing on each platform, not just "it's configured."
@@ -163,7 +167,7 @@ Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not 
 - **A5** Visual design provided later by user; v1 builds functional screens first.
 - **A6** Local dev only for v1 (Expo API routes + Inngest dev server); no prod deploy.
 - **A7** Chat edits mutate `itinerary` jsonb in place; no versioning beyond the chat transcript.
-- **A8** Exact Gemini model id/structured-output approach not yet pinned — confirm against current Gemini API docs at implementation time.
+- **A8** ~~Exact Gemini model id/structured-output approach not yet pinned~~ Resolved: model ids are pinned in `src/lib/openai.ts` (`gpt-5.4-mini`) and `src/lib/gemini.ts`; both use JSON mode + Zod validation. Model ids go stale — re-check with each SDK's `models.list()` if calls start 404ing.
 - **A9** Web trip-detail view simply omits the map section rather than substituting a different map library — revisit if that's not acceptable.
 
 ---
@@ -178,7 +182,7 @@ multi-day plan → user refines via chat. Single role, consumer travelers, Andro
 - **Auth:** Clerk (Google + Apple only), webhook syncs users → Neon
 - **Backend:** Expo Router API routes (`+api.ts`), local dev + Inngest dev server (no EAS Hosting v1)
 - **DB:** Neon Postgres + Drizzle ORM
-- **AI:** Google Gemini (text generation + chat-based itinerary edits) — no OpenAI, no Claude
+- **AI:** OpenAI primary, Google Gemini automatic fallback (text generation + chat-based itinerary edits) — no Claude
 - **Background jobs:** Inngest (durable generation + retries)
 - **Images:** ImageKit (profile photos + per-trip cover images); covers sourced from Unsplash
 - **Maps:** `react-native-maps` on Android (Google Maps, needs API key) and iOS (Apple Maps, free); omitted on Web
@@ -188,7 +192,7 @@ multi-day plan → user refines via chat. Single role, consumer travelers, Andro
 
 1. First run → Clerk sign-in (Google/Apple) → webhook upserts user → home (empty).
 2. Generate → form → `POST /trips` (status `pending`) + Inngest → loading polls status → `ready` → detail. Failure → retries → `failed` → "Try again" (quota untouched).
-3. Refine → chat → synchronous Gemini targeted edits → trip updated in place + history persisted.
+3. Refine → chat → synchronous LLM (OpenAI, Gemini fallback) targeted edits → trip updated in place + history persisted.
 4. Manage → home lists trips → view → delete (cascade).
 
 **Data model:**
@@ -202,7 +206,7 @@ multi-day plan → user refines via chat. Single role, consumer travelers, Andro
 
 - Sign in with Google + Apple on each platform that supports it → `users` row in Neon via webhook.
 - Submit form → status `pending`→`generating`→`ready` → detail renders itinerary/budget/cover (and map on native).
-- Force Gemini failure → retries → `failed` → "Try again", quota untouched.
+- Force failure of both AI providers → retries → `failed` → "Try again", quota untouched. (One provider failing alone should fall back silently and still succeed.)
 - Delete removes trip + chat.
 - Chat edit ("make day 2 more relaxed") mutates itinerary in place; history persists.
 - Exceed per-day cap → soft error; Sentry receives events.

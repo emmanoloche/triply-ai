@@ -32,7 +32,9 @@ export const env = {
   UNSPLASH_ACCESS_KEY: required("UNSPLASH_ACCESS_KEY", process.env.UNSPLASH_ACCESS_KEY),
   IMAGEKIT_PRIVATE_KEY: required("IMAGEKIT_PRIVATE_KEY", process.env.IMAGEKIT_PRIVATE_KEY),
   IMAGEKIT_URL_ENDPOINT: required("IMAGEKIT_URL_ENDPOINT", process.env.IMAGEKIT_URL_ENDPOINT),
-  // Not required at import time — genuinely unset until you add it (see
-  // src/lib/gemini.ts, which throws a clear error at call time instead).
+  // Neither AI key is required at import time: OpenAI is the primary provider
+  // and Gemini the fallback (see src/lib/llm.ts), so either can be missing and
+  // the other still works. Each provider throws a clear error at call time.
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   GOOGLE_GENAI_API_KEY: process.env.GOOGLE_GENAI_API_KEY,
 } as const;
