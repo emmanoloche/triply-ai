@@ -35,7 +35,7 @@ Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not 
 - [ ] Set `web.output: "server"` in `app.json` (enables API routes)
 - [x] Install `expo-dev-client` (required regardless of the Clerk auth-flow choice, since `react-native-maps` and `expo-apple-authentication` already need a custom dev build — Expo Go alone won't run this app)
 - [~] Install Expo-native deps: `@sentry/react-native`, `expo-secure-store`, `expo-web-browser`, `expo-auth-session` installed; `react-native-maps`, `expo-crypto`, `expo-apple-authentication` still pending (native-only — see "Deferred until the native Android dev build succeeds")
-- [~] Install JS/server deps: `@clerk/expo`, `drizzle-orm`, `@neondatabase/serverless`, `inngest`, `svix`, `zod` installed; `@google/genai` (Gemini), `imagekit` still pending
+- [x] Install JS/server deps: `@clerk/expo`, `drizzle-orm`, `@neondatabase/serverless`, `inngest`, `svix`, `zod`, `@google/genai`, `@clerk/backend` installed; `imagekit` installed then swapped for `@imagekit/nodejs` (upstream deprecated `imagekit` in favor of it, per an `npm install` warning)
 - [x] Install dev deps: `drizzle-kit`, `dotenv`
 - [x] `.env` populated with the current keys (Clerk, Sentry, DB, and the rest as needed); `.env.example` created and kept in sync
 - [~] Add Clerk + relevant config plugins to `app.json` — `@clerk/expo`, `expo-secure-store`, `expo-web-browser`, Sentry plugins are in; `react-native-maps` plugin still pending (package not installed yet)
@@ -64,45 +64,51 @@ Per `AGENTS.md`, this is a known, accepted limitation of the current setup, not 
 - [x] Drizzle config (`drizzle.config.ts`) pointed at Neon (loads `DATABASE_URL` via `dotenv`, since `drizzle-kit` runs outside Expo/Metro's own env loading)
 - [x] Neon serverless client — at `src/lib/db/client.ts` (plan said `src/db/index.ts`; kept it under `src/lib/` to match `src/lib/env.ts` and `src/lib/inngest/`), `drizzle-orm/neon-http` + `@neondatabase/serverless`
 - [x] `users` table (Clerk userId PK, email, name, imageUrl, timestamps) — `src/lib/db/schema.ts`
-- [ ] `trips` table (userId FK, destination, startDate, numDays, numTravelers, budgetTier enum, interests, status enum, coverImageUrl, itinerary jsonb, budgetBreakdown jsonb, errorMessage, timestamps)
-- [ ] `chat_messages` table (tripId FK cascade, role, content, createdAt)
-- [ ] `generation_usage` table/counter (per user per day) for safety cap
-- [ ] Zod schemas / TS types for `itinerary` and `budgetBreakdown` jsonb shapes (`src/lib/itinerary.ts`)
-- [x] Generate + run migrations against Neon (`db:push`) — `npm run db:push` run (2026-09-22); confirmed via `information_schema` that `users` exists on Neon with the expected columns
-- [ ] Typed DB helpers, all scoped by authenticated `userId` (routes filter by `userId`; `src/lib/usage.ts`)
-- **DoD:** Migrations applied on Neon; helper can create/read a trip scoped to a user. **Partially met** — `users` table is live on Neon; no `trips` table yet, and the insert helper only exists inline in the Inngest function, not as a general typed helper.
+- [x] `trips` table (userId FK, destination, startDate, numDays, numTravelers, budgetTier enum, pace enum, interests jsonb, status enum, coverImageUrl, itinerary jsonb, budgetBreakdown jsonb, hotelSuggestions jsonb, errorMessage, timestamps) — `src/lib/db/schema.ts`, live on Neon (2026-09-23)
+- [ ] `chat_messages` table (tripId FK cascade, role, content, createdAt) — Phase 5, not needed yet
+- [x] `generation_usage` table/counter (per user per day) for safety cap — `src/lib/db/schema.ts`, composite PK `(userId, day)`, live on Neon
+- [x] Zod schemas / TS types for `itinerary` and `budgetBreakdown` jsonb shapes (`src/lib/itinerary.ts`) — also covers `hotelSuggestions` and the full `tripGenerationSchema` Gemini's response is validated against
+- [x] Generate + run migrations against Neon (`db:push`) — run 2026-09-22 (`users`) and 2026-09-23 (`trips`, `generation_usage`); confirmed via `information_schema` each time
+- [x] Typed DB helpers, all scoped by authenticated `userId` — `src/lib/usage.ts` (`tryConsumeGeneration`, `refundGeneration`); every trips API route filters by `userId`, not just `id`
+- **DoD:** Migrations applied on Neon; helper can create/read a trip scoped to a user. **Met** — all three tables live, exercised by the Phase 3 pipeline below (code-complete, not yet run end-to-end — see Phase 3 DoD).
 
 ## Phase 3 — Generation Pipeline
 
-- [ ] Generate-trip form screen: destination, travel start date, # days, # travelers, budget tier (Low/Med/Luxury), interests/style tags
-- [ ] Client-side validation of the form (button gated on destination + start date; server re-validates via Zod)
-- [ ] `POST /api/trips+api.ts`: auth → safety-cap check → create `trip` (status `pending`) → trigger Inngest event
-- [~] Inngest client (`src/lib/inngest/client.ts`) + endpoint route (`src/app/api/inngest+api.ts`, `serve()` from `inngest/edge`) — infra built in Phase 1 for user sync, and reused here; only `syncUserCreation` is registered so far, the `generate-trip` function below still needs to be added to the same `functions: []` list
-- [ ] Inngest `generate-trip` function:
-  - [ ] Set status `generating`
-  - [ ] Call **Gemini** with a structured itinerary schema (`src/lib/gemini.ts`) — confirm current model id + structured-output mechanism against docs at implementation time
-  - [ ] Validate AI output against Zod schema (`tripGenerationSchema.parse`)
-  - [ ] Fetch destination cover image (Unsplash) → upload/optimize via ImageKit (`src/lib/images.ts`)
-  - [ ] Persist itinerary + budgetBreakdown + coverImageUrl → status `ready`
-  - [ ] Retries on failure; terminal failure → status `failed` + errorMessage (quota refunded via `onFailure`)
-- [ ] Silent safety cap (20 generations/user/day) enforced in `POST /api/trips` (`src/lib/usage.ts`)
-- [ ] Loading screen polls `GET /api/trips/[id]/status+api.ts` (`src/app/trip-loading.tsx`)
-- [ ] On `ready` → navigate to trip detail; on `failed` → error + "Try again"
-- [ ] Run against **local Inngest dev server** (no EAS Hosting in v1) — `expo start` (all platforms) + `npx inngest-cli dev`
-- **DoD:** Submitting the form generates a real trip end-to-end locally on Android, iOS, and Web; status flips pending→generating→ready; forced failure shows graceful error.
+- [x] Generate-trip form screen: destination, travel start date, # days, # travelers, budget tier (Budget/Comfort/Luxury), interests/style tags, plus travel pace (not in the original spec, added since the design included it) — `src/app/generate-trip.tsx`
+- [x] Client-side validation of the form (button gated on destination; server re-validates via Zod in `POST /api/trips`)
+- [x] `POST /api/trips+api.ts`: auth (`requireUserId`, `@clerk/backend`'s `verifyToken`) → safety-cap check (`tryConsumeGeneration`) → create `trip` (status `pending`) → trigger Inngest event (`trip/generate`)
+- [x] Inngest client (`src/lib/inngest/client.ts`) + endpoint route (`src/app/api/inngest+api.ts`, `serve()` from `inngest/edge`) — `generateTrip` now registered alongside the three user-sync functions
+- [x] Inngest `generate-trip` function (`src/lib/inngest/functions/generate-trip.ts`):
+  - [x] Set status `generating`
+  - [x] Call **Gemini** with a structured itinerary prompt (`src/lib/gemini.ts`) — model id `gemini-3.6-flash`. First shipped as `gemini-2.0-flash` (matched the installed `@google/genai` package's own bundled JSDoc examples) but that turned out stale too — a real run against the live API 404'd and named `gemini-3.6-flash` as the replacement directly, which is what's actually in the code now
+  - [x] Validate AI output against Zod schema (`tripGenerationSchema.parse`, inside `generateItinerary` itself)
+  - [x] Fetch destination cover image (Unsplash search) → upload/optimize via ImageKit (`src/lib/images.ts`, now using `@imagekit/nodejs` — the `imagekit` package the plan originally named is deprecated upstream in favor of this)
+  - [x] Persist itinerary + budgetBreakdown + hotelSuggestions + coverImageUrl → status `ready`
+  - [x] Retries on failure (`retries: 3`); terminal failure → status `failed` + errorMessage, quota refunded via `onFailure`
+- [x] Silent safety cap (20 generations/user/day) enforced in `POST /api/trips` (`src/lib/usage.ts`)
+- [x] Loading screen polls `GET /api/trips/[id]/status+api.ts` (`src/app/trip-loading.tsx`)
+- [x] On `ready` → navigate to trip detail; on `failed` → error + "Try again" — trip detail screen (`src/app/trip/[id].tsx`) is intentionally minimal/functional only (destination, dates, budget breakdown, hotel suggestions, day-by-day itinerary as plain text/cards) — the polished Phase 4 UI (map, styled hotel cards, budget chart) from `design/trip-detail-screen-design1.png` is separate follow-up work, not done here
+- [x] "Try again" retries the *same* trip in place, not a blank form — `POST /api/trips/[id]/retry+api.ts` re-fires generation using the destination/dates/etc. already stored on the row (a real gap found and fixed 2026-09-24, after seeing Gemini's `503` "high demand" error hit twice in production-realistic testing: the original "Try again" sent the user back to an empty form, which is bad UX for a transient failure that had nothing to do with their input)
+- [x] Gemini call has a request timeout (`httpOptions.timeout: 60_000` in `src/lib/gemini.ts`) — found and fixed 2026-09-24 after a real run hung 9+ minutes in `generating` with the Inngest dev server confirmed still running: a genuine network hang (connection accepted, no response ever sent) is different from a fast `503` rejection and was never throwing, so nothing triggered retry/failure. The already-stuck row from that incident was cleaned up manually (marked `failed`, quota refunded) since the fix only prevents it going forward.
+- [x] Activity `category` validation falls back to `"other"` instead of failing the whole generation (`activityCategorySchema.catch("other")` in `src/lib/itinerary.ts`) — found 2026-09-24 via a real `ZodError` (Gemini returned a category outside the 8-value enum); verified the `.catch()` fallback actually works against this installed Zod version before trusting it.
+- [x] Model switched `gemini-2.0-flash` → `gemini-3.6-flash` → **`gemini-3.5-flash-lite`** (`src/lib/gemini.ts`) — `gemini-3.6-flash` hit its free-tier daily quota for real (confirmed 429: `limit: 20, model: gemini-3.6-flash`) after a day of heavy testing/retries, then also started 503'ing. Since the quota metric name includes the model, quota is tracked **per model** — confirmed by listing all available models via `client.models.list()` and testing real candidates live: `gemini-3.8-flash` (newest) was 503-overloaded, `gemini-2.5-flash`/`gemini-2.5-flash-lite` are fully retired for new users, `gemini-3.5-flash-lite` succeeded with fresh quota. Caveat: it's a "lite" model, likely somewhat less capable — watch itinerary quality on the next real run.
+- [x] At most one generation in flight per user — `POST /api/trips+api.ts` checks for an existing `pending`/`generating` trip before creating a new one; if found, returns that trip's id (`reused: true`) instead of starting a second, and the client shows an explicit "already generating" message rather than silently redirecting to a different trip than the one just submitted. Enforced server-side (not just disabling the button client-side), since the client can't be trusted alone. Deliberately *prevents* duplicates rather than cancelling an in-progress one on navigate-away — cancelling was considered and rejected: "leaving the loading screen" isn't reliably the same as "abandoning the trip" (backgrounding the app, a tab switch, etc. would falsely trigger it), so it risked killing generations the user still wanted.
+- [x] Unsplash cover search falls back "City, Country" → city alone → country alone (`src/lib/images.ts`) — found and fixed 2026-09-24 after a real trip (Makurdi, Nigeria) came back `ready` with no cover image. Confirmed directly against the live Unsplash API: `"Makurdi, Nigeria"` → 0 results, `"Nigeria"` alone → 2590 — the combined query was too narrow for a sparsely-tagged smaller city, not a lack of any coverage at all. The one already-affected trip was backfilled manually with the same fallback logic.
+- [x] Run against **local Inngest dev server** (no EAS Hosting in v1) — `expo start` (all platforms) + `npx inngest-cli dev`. Exercised for real on 2026-09-23 across three runs: (1) stale model id → `failed`, fixed same day; (2) real Gemini `503 UNAVAILABLE` (Google's servers temporarily overloaded, not our bug) → correctly retried, then `failed` with a clean error message and refunded quota; (3) **succeeded** — a real trip (Lagos, Nigeria, 4 days) reached `ready` with a 4-day itinerary, a budget breakdown that sums correctly (100+60+40+25+15=240=total), and a real ImageKit cover image URL, all confirmed directly in Neon (not just the on-screen result). Android only so far.
+- **DoD:** Submitting the form generates a real trip end-to-end locally on Android, iOS, and Web; status flips pending→generating→ready; forced failure shows graceful error. **Met on Android** (verified in Neon, not just the UI); iOS/Web not yet tried (iOS blocked entirely — no Mac, per the project's standing constraint).
 
 ## Phase 4 — Trip Detail & Management
 
-- [ ] Home screen: list of user's trips + "Generate trip" entry (functional; styling later)
-- [ ] `GET /api/trips+api.ts` (list) and `GET /api/trips/[id]+api.ts` (detail)
-- [ ] Trip detail: cover image (ImageKit), day-by-day itinerary
-- [ ] Places per day (attractions/restaurants) with descriptions
-- [ ] Hotel suggestions section
-- [ ] Budget breakdown section
-- [ ] Map with place pins (LLM lat/lng) — **native only** (Android/iOS via `react-native-maps`); hidden/omitted on Web
-- [ ] Delete trip (`DELETE /api/trips/[id]+api.ts`) → cascade chat + cleanup
-- [ ] Empty state for no trips
-- **DoD:** A generated trip renders fully (itinerary/places/hotels/budget/cover) on all three platforms, plus the map on Android/iOS; delete removes it everywhere.
+- [x] Trips tab: real list of the user's `ready` trips + empty state — `(home)/trips.tsx`, matches `design/trips-screen-ui-design.png`. Built 2026-09-24, originally as a fix for a real gap found while testing: there was no way back to an already-generated trip once you navigated away (only reachable right after generation finished), which surfaced while debugging a dropped-ngrok-tunnel sync issue.
+- [x] `GET /api/trips+api.ts` (list, `ready` trips only, scoped by `userId`) and `GET /api/trips/[id]+api.ts` (detail) — both live
+- [x] Trip detail: cover image (ImageKit) + credit line, day-by-day itinerary — `trip/[id].tsx`, matches `design/trip-detail-screen-design1.png`. Built 2026-09-24; not yet run through the screenshot-comparison loop against the design (interrupted by Gemini quota/ngrok issues that day) — still needs a visual pass.
+- [x] Places per day (attractions/restaurants) with descriptions — expandable day cards on the detail screen
+- [x] Hotel suggestions section — plain card list (not styled to a specific design reference, none provided for this section specifically)
+- [x] Budget breakdown section — also surfaced as the 3 stat circles (duration/travelers/budget) at the top of the detail screen, matching the design
+- [ ] Map with place pins (LLM lat/lng) — **native only** (Android/iOS via `react-native-maps`); hidden/omitted on Web. Deliberately a placeholder card on the detail screen right now (`react-native-maps` isn't installed — native-only, can't run in Expo Go, needs a Google Maps API key — all already tracked in "Deferred until the native Android dev build succeeds")
+- [ ] Delete trip (`DELETE /api/trips/[id]+api.ts`) → cascade chat + cleanup — not built yet
+- [x] Empty state for no trips — Trips tab shows a message pointing back to Home
+- **DoD:** A generated trip renders fully (itinerary/places/hotels/budget/cover) on all three platforms, plus the map on Android/iOS; delete removes it everywhere. **Partially met** — renders fully on Android (not yet pixel-compared to the design); iOS untestable (no Mac); Web untested; map is a placeholder; delete not built.
 
 ## Phase 5 — AI Chat Refine
 

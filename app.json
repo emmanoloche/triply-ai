@@ -45,7 +45,13 @@
       ],
       "@clerk/expo",
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Triply to access your photos to set a trip's cover image."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
