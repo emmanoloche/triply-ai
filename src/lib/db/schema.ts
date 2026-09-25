@@ -1,6 +1,23 @@
-import { date, integer, jsonb, pgEnum, pgTable, primaryKey, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  date,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
-import type { BudgetBreakdown, HotelSuggestion, ItineraryDay } from "@/lib/itinerary";
+import type {
+  BudgetBreakdown,
+  HotelSuggestion,
+  ItineraryDay,
+} from "@/lib/itinerary";
 
 /**
  * Mirrors the Clerk user, kept in sync via the `user.created` webhook →
@@ -12,48 +29,79 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   name: text("name"),
   imageUrl: text("image_url"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
   // Tombstone, not a hard delete: keeps the row so an out-of-order/redelivered
   // `user.updated` webhook event can't resurrect a deleted user (see
   // sync-user-update.ts's setWhere guard and sync-user-deletion.ts). null = active.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
-export const tripStatusEnum = pgEnum("trip_status", ["pending", "generating", "ready", "failed"]);
-export const budgetTierEnum = pgEnum("budget_tier", ["budget", "comfort", "luxury"]);
-export const travelPaceEnum = pgEnum("travel_pace", ["relaxed", "balanced", "fast"]);
+export const tripStatusEnum = pgEnum("trip_status", [
+  "pending",
+  "generating",
+  "ready",
+  "failed",
+]);
+export const budgetTierEnum = pgEnum("budget_tier", [
+  "budget",
+  "comfort",
+  "luxury",
+]);
+export const travelPaceEnum = pgEnum("travel_pace", [
+  "relaxed",
+  "balanced",
+  "fast",
+]);
 
 /**
  * One row per generation request. `itinerary`/`budgetBreakdown`/`hotelSuggestions`
  * are null until Gemini actually produces them (status flips pending → generating
  * → ready|failed; see src/lib/inngest/functions/generate-trip.ts).
  */
-export const trips = pgTable("trips", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  destination: text("destination").notNull(),
-  startDate: date("start_date").notNull(),
-  numDays: integer("num_days").notNull(),
-  numTravelers: integer("num_travelers").notNull(),
-  budgetTier: budgetTierEnum("budget_tier").notNull(),
-  pace: travelPaceEnum("pace").notNull().default("balanced"),
-  interests: jsonb("interests").$type<string[]>().notNull().default([]),
-  status: tripStatusEnum("status").notNull().default("pending"),
-  coverImageUrl: text("cover_image_url"),
-  // Unsplash's API guidelines require crediting the photographer wherever
-  // the photo is shown — see design/trip-detail-screen-design1.png's
-  // "Photo by X on Unsplash" line.
-  coverImageCredit: text("cover_image_credit"),
-  itinerary: jsonb("itinerary").$type<ItineraryDay[]>(),
-  budgetBreakdown: jsonb("budget_breakdown").$type<BudgetBreakdown>(),
-  hotelSuggestions: jsonb("hotel_suggestions").$type<HotelSuggestion[]>(),
-  errorMessage: text("error_message"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const trips = pgTable(
+  "trips",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    destination: text("destination").notNull(),
+    startDate: date("start_date").notNull(),
+    numDays: integer("num_days").notNull(),
+    numTravelers: integer("num_travelers").notNull(),
+    budgetTier: budgetTierEnum("budget_tier").notNull(),
+    pace: travelPaceEnum("pace").notNull().default("balanced"),
+    interests: jsonb("interests").$type<string[]>().notNull().default([]),
+    status: tripStatusEnum("status").notNull().default("pending"),
+    coverImageUrl: text("cover_image_url"),
+    // Unsplash's API guidelines require crediting the photographer wherever
+    // the photo is shown — see design/trip-detail-screen-design1.png's
+    // "Photo by X on Unsplash" line.
+    coverImageCredit: text("cover_image_credit"),
+    itinerary: jsonb("itinerary").$type<ItineraryDay[]>(),
+    budgetBreakdown: jsonb("budget_breakdown").$type<BudgetBreakdown>(),
+    hotelSuggestions: jsonb("hotel_suggestions").$type<HotelSuggestion[]>(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // At most one in-flight generation per user, enforced by the DB so two
+    // concurrent POSTs can't both pass the app-level check in api/trips+api.ts.
+    uniqueIndex("trips_one_in_flight_per_user")
+      .on(table.userId)
+      .where(sql`${table.status} in ('pending', 'generating')`),
+  ],
+);
 
 /**
  * The Home screen's "Popular destinations" row — global, not per-user.
@@ -73,7 +121,9 @@ export const popularDestinations = pgTable("popular_destinations", {
   // same as most "popular X" UI mockups do.
   rating: real("rating").notNull(),
   rank: integer("rank").notNull(),
-  refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull().defaultNow(),
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 /**

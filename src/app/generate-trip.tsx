@@ -66,6 +66,27 @@ function isBeforeToday(year: number, month: number, day: number, today: Date): b
   return cell < startOfToday;
 }
 
+// Matches createTripSchema's numDays max in src/app/api/trips+api.ts.
+const MAX_TRIP_DAYS = 30;
+const MS_PER_DAY = 86_400_000;
+
+// Full date, not just a day-of-month — a selection has to survive paging to
+// another month, and a range can span two months.
+type PickedDate = { year: number; month: number; day: number };
+
+// UTC-based so comparisons and day counts aren't thrown off by DST shifts.
+function dateKey(d: PickedDate): number {
+  return Date.UTC(d.year, d.month, d.day);
+}
+
+function inclusiveDays(start: PickedDate, end: PickedDate): number {
+  return Math.round((dateKey(end) - dateKey(start)) / MS_PER_DAY) + 1;
+}
+
+function toIsoDate(d: PickedDate): string {
+  return `${d.year}-${String(d.month + 1).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
+}
+
 type DayCell = { day: number; key: string } | null;
 
 function getMonthWeeks(year: number, month: number): DayCell[][] {
@@ -128,8 +149,12 @@ export default function GenerateTrip() {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [startDay, setStartDay] = useState<number | null>(today.getDate());
-  const [endDay, setEndDay] = useState<number | null>(null);
+  const [startDate, setStartDate] = useState<PickedDate | null>({
+    year: today.getFullYear(),
+    month: today.getMonth(),
+    day: today.getDate(),
+  });
+  const [endDate, setEndDate] = useState<PickedDate | null>(null);
 
   const [budget, setBudget] = useState<BudgetTier>("comfort");
   const [travelers, setTravelers] = useState(2);
@@ -158,22 +183,27 @@ export default function GenerateTrip() {
     }
   };
 
+  const isBeyondMaxRange = (picked: PickedDate) =>
+    startDate !== null && endDate === null && inclusiveDays(startDate, picked) > MAX_TRIP_DAYS;
+
   const handleDayPress = (day: number) => {
     if (isBeforeToday(viewYear, viewMonth, day, today)) return;
-    if (startDay === null || endDay !== null) {
-      setStartDay(day);
-      setEndDay(null);
+    const picked: PickedDate = { year: viewYear, month: viewMonth, day };
+    if (startDate === null || endDate !== null) {
+      setStartDate(picked);
+      setEndDate(null);
       return;
     }
-    if (day === startDay) {
-      setStartDay(null);
+    if (dateKey(picked) === dateKey(startDate)) {
+      setStartDate(null);
       return;
     }
-    if (day < startDay) {
-      setStartDay(day);
+    if (dateKey(picked) < dateKey(startDate)) {
+      setStartDate(picked);
       return;
     }
-    setEndDay(day);
+    if (isBeyondMaxRange(picked)) return;
+    setEndDate(picked);
   };
 
   const toggleInterest = (interest: string) => {
@@ -188,14 +218,16 @@ export default function GenerateTrip() {
     if (!isFormValid || submitting) return;
     setSubmitting(true);
     try {
-      // startDay can be null if the user deselected it (tapped it again) —
+      // startDate can be null if the user deselected it (tapped it again) —
       // fall back to today's real date rather than crash, since the submit
       // button is only gated on destination, not on a date being picked.
-      const effectiveYear = startDay !== null ? viewYear : today.getFullYear();
-      const effectiveMonth = startDay !== null ? viewMonth : today.getMonth();
-      const effectiveDay = startDay ?? today.getDate();
-      const numDays = startDay !== null && endDay ? endDay - startDay + 1 : 1;
-      const startDateStr = `${effectiveYear}-${String(effectiveMonth + 1).padStart(2, "0")}-${String(effectiveDay).padStart(2, "0")}`;
+      const effectiveStart: PickedDate = startDate ?? {
+        year: today.getFullYear(),
+        month: today.getMonth(),
+        day: today.getDate(),
+      };
+      const numDays = startDate !== null && endDate !== null ? inclusiveDays(startDate, endDate) : 1;
+      const startDateStr = toIsoDate(effectiveStart);
 
       const token = await getToken();
       const res = await fetch("/api/trips", {
@@ -240,10 +272,11 @@ export default function GenerateTrip() {
     }
   };
 
+  const formatShort = (d: PickedDate) => `${MONTH_NAMES[d.month].slice(0, 3)} ${d.day}`;
   const dateRangeLabel =
-    startDay === null
+    startDate === null
       ? "Select your dates"
-      : `${MONTH_NAMES[viewMonth].slice(0, 3)} ${startDay}${endDay ? ` – ${MONTH_NAMES[viewMonth].slice(0, 3)} ${endDay}` : ""}`;
+      : `${formatShort(startDate)}${endDate ? ` – ${formatShort(endDate)}` : ""}`;
 
   return (
     <View className="flex-1 bg-white">
@@ -306,7 +339,7 @@ export default function GenerateTrip() {
             <Text className="text-[15px]">📅</Text>
             <Text
               className="ml-2 text-[15px]"
-              style={{ color: startDay === null ? PLACEHOLDER : "#0A0A0A" }}
+              style={{ color: startDate === null ? PLACEHOLDER : "#0A0A0A" }}
             >
               {dateRangeLabel}
             </Text>
@@ -350,11 +383,18 @@ export default function GenerateTrip() {
                 if (!cell) return <View key={di} className="h-9 flex-1" />;
 
                 const { day } = cell;
-                const isStart = day === startDay;
-                const isEnd = day === endDay;
+                const cellDate: PickedDate = { year: viewYear, month: viewMonth, day };
+                const cellKey = dateKey(cellDate);
+                const isStart = startDate !== null && cellKey === dateKey(startDate);
+                const isEnd = endDate !== null && cellKey === dateKey(endDate);
                 const isEndpoint = isStart || isEnd;
-                const isInRange = startDay !== null && endDay !== null && day > startDay && day < endDay;
+                const isInRange =
+                  startDate !== null &&
+                  endDate !== null &&
+                  cellKey > dateKey(startDate) &&
+                  cellKey < dateKey(endDate);
                 const isPast = isBeforeToday(viewYear, viewMonth, day, today);
+                const isDisabled = isPast || isBeyondMaxRange(cellDate);
 
                 return (
                   <View key={di} className="h-9 flex-1 items-center justify-center">
@@ -372,7 +412,7 @@ export default function GenerateTrip() {
                         style={{ backgroundColor: "#DCE9FF" }}
                       />
                     )}
-                    {isStart && endDay !== null && (
+                    {isStart && endDate !== null && (
                       <View
                         pointerEvents="none"
                         className="absolute inset-y-0 left-1/2 right-0"
@@ -383,7 +423,7 @@ export default function GenerateTrip() {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Select day ${day}`}
-                      disabled={isPast}
+                      disabled={isDisabled}
                       onPress={() => handleDayPress(day)}
                       className="h-8 w-8 items-center justify-center rounded-full active:opacity-80"
                       style={{ backgroundColor: isEndpoint ? BLUE : "transparent" }}
@@ -391,7 +431,7 @@ export default function GenerateTrip() {
                       <Text
                         className="text-[14px]"
                         style={{
-                          color: isPast ? "#D1D5DB" : isEndpoint ? "#FFFFFF" : isInRange ? BLUE : "#0A0A0A",
+                          color: isDisabled ? "#D1D5DB" : isEndpoint ? "#FFFFFF" : isInRange ? BLUE : "#0A0A0A",
                           fontWeight: isEndpoint ? "700" : "400",
                         }}
                       >
