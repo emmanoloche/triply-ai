@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect, usePathname } from "expo-router";
+import { Redirect } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 
 const BLUE = "#076FFA";
@@ -7,16 +7,12 @@ const BLUE = "#076FFA";
 /** Requires sign-in before showing the app's native home tabs. */
 export default function HomeLayout() {
   const { isLoaded, isSignedIn } = useAuth();
-  // The Assistant is a chat-only screen (like ChatGPT): no tab bar, just the
-  // conversation and the keyboard. It has its own back button.
-  const onAssistant = usePathname() === "/assistant";
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
 
   return (
     <NativeTabs
-      hidden={onAssistant}
       iconColor={{ selected: BLUE }}
       labelStyle={{ selected: { color: BLUE } }}
       // Android's Material bottom nav only shows the label of the selected

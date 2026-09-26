@@ -209,7 +209,10 @@ export default function GenerateTrip() {
       setStartDate(picked);
       return;
     }
-    if (isBeyondMaxRange(picked)) return;
+    if (isBeyondMaxRange(picked)) {
+      setStartDate(picked);
+      return;
+    }
     setEndDate(picked);
   };
 
@@ -415,7 +418,7 @@ export default function GenerateTrip() {
                   cellKey > dateKey(startDate) &&
                   cellKey < dateKey(endDate);
                 const isPast = isBeforeToday(viewYear, viewMonth, day, today);
-                const isDisabled = isPast || isBeyondMaxRange(cellDate);
+                const isDisabled = isPast;
 
                 return (
                   <View key={di} className="h-9 flex-1 items-center justify-center">

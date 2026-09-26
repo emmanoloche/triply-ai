@@ -30,6 +30,11 @@ export const users = pgTable("users", {
   // `user.updated` webhook event can't resurrect a deleted user (see
   // sync-user-update.ts's setWhere guard and sync-user-deletion.ts). null = active.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // When the user last cleared their Assistant conversation. A chat reply that
+  // began before this moment is never saved (see api/assistant+api.ts), so a
+  // reply still streaming when the conversation is cleared — even from another
+  // device — can't bring the cleared messages back. null = never cleared.
+  assistantClearedAt: timestamp("assistant_cleared_at", { withTimezone: true }),
 });
 
 export const tripStatusEnum = pgEnum("trip_status", ["pending", "generating", "ready", "failed"]);

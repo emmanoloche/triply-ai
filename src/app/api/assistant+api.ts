@@ -1,9 +1,9 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireUserId } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { assistantMessages } from "@/lib/db/schema";
+import { assistantMessages, users } from "@/lib/db/schema";
 import { streamChatReply } from "@/lib/llm";
 
 // Caps that keep one request (and its cost) bounded: only the most recent
@@ -52,15 +52,57 @@ export async function GET(request: Request) {
   return Response.json(rows.reverse());
 }
 
-// "Clear conversation": deletes every saved message for the signed-in user.
+// Both the clear below and the save at the end of POST take this same
+// per-user lock, inside one transaction each (db.batch runs its statements as
+// a single transaction on this driver, which has no interactive transactions).
+// That makes them strictly one-after-the-other for a given user instead of able
+// to interleave.
+const lockUser = (userId: string) => db.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
+
+// "Clear conversation": deletes every saved message for the signed-in user, and
+// records when. A reply that began before that moment is refused at save time
+// (see saveExchange), so it can't reappear after this returns — including a
+// reply being written for the same account on another device.
 export async function DELETE(request: Request) {
   const userId = await requireUserId(request);
   if (!userId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await db.delete(assistantMessages).where(eq(assistantMessages.userId, userId));
+  await db.batch([
+    lockUser(userId),
+    db.update(users).set({ assistantClearedAt: new Date() }).where(eq(users.id, userId)),
+    db.delete(assistantMessages).where(eq(assistantMessages.userId, userId)),
+  ]);
   return Response.json({ ok: true });
+}
+
+/**
+ * Saves a question and its answer together — unless the conversation was
+ * cleared after the question was asked. The check and the insert are one
+ * statement, and they run under the same per-user lock as the clear, so either
+ * the save lands first (and the clear then deletes it) or the clear lands first
+ * (and this saves nothing). Returns whether anything was saved.
+ */
+async function saveExchange(userId: string, question: string, askedAt: Date, answer: string) {
+  const asked = askedAt.toISOString();
+  const answered = new Date().toISOString();
+  const [, saved] = await db.batch([
+    lockUser(userId),
+    db.execute(sql`
+      insert into ${assistantMessages} (user_id, role, content, created_at)
+      select ${userId}, v.role, v.content, v.created_at
+      from (values
+        ('user', ${question}, ${asked}::timestamptz),
+        ('assistant', ${answer}, ${answered}::timestamptz)
+      ) as v(role, content, created_at)
+      where not exists (
+        select 1 from ${users}
+        where ${users.id} = ${userId} and ${users.assistantClearedAt} > ${asked}::timestamptz
+      )
+    `),
+  ]);
+  return (saved.rowCount ?? 0) > 0;
 }
 
 // General travel chat for the Assistant tab, streamed back as plain text as it
@@ -113,18 +155,19 @@ export async function POST(request: Request) {
 
   const encoder = new TextEncoder();
   let reply = "";
+  let cancelled = false;
   const replyStream = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const { value, done } = await pieces.next();
+        // Stopped while this read was waiting: the stream is already closed.
+        if (cancelled) return;
         if (done) {
-          // The whole answer is here: save the question and the answer together.
-          // A failure to save shouldn't cost the user the reply they just got.
+          // The whole answer is here: save the question and the answer together
+          // (unless the conversation was cleared meanwhile). A failure to save
+          // shouldn't cost the user the reply they just got.
           try {
-            await db.insert(assistantMessages).values([
-              { userId, role: "user", content: message, createdAt: askedAt },
-              { userId, role: "assistant", content: reply, createdAt: new Date() },
-            ]);
+            await saveExchange(userId, message, askedAt, reply);
           } catch (error) {
             console.error("Couldn't save the assistant exchange:", error);
           }
@@ -134,6 +177,7 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(value));
         }
       } catch (error) {
+        if (cancelled) return;
         // Failed after the reply had started: it can't be switched to the other
         // provider mid-sentence, so end the stream with an error and let the
         // app decide what to show alongside the partial text. Nothing is saved.
@@ -141,12 +185,26 @@ export async function POST(request: Request) {
         controller.error(error);
       }
     },
-    // The app went away (closed the screen, cleared the chat): stop asking the
-    // AI for text nobody will read. Nothing is saved for an abandoned reply.
+    // The app stopped the reply (the stop button) or went away: stop asking the
+    // AI for text nobody will read. What was written so far is kept, like
+    // ChatGPT keeps a stopped answer — and saveExchange refuses to save it if
+    // the conversation was cleared meanwhile, so clearing can't be undone this
+    // way. Nothing is saved if no text had been written yet.
     async cancel() {
+      cancelled = true;
       await pieces.return(undefined);
+      if (!reply.trim()) return;
+      try {
+        await saveExchange(userId, message, askedAt, reply);
+      } catch (error) {
+        console.error("Couldn't save the stopped assistant reply:", error);
+      }
     },
-  });
+  },
+  // Only pull a piece when the app actually asks for one. By default a stream
+  // reads one piece ahead on its own, which would make a reply stopped before
+  // any text reached the app look like it had been written.
+  { highWaterMark: 0 });
 
   return new Response(replyStream, {
     headers: {
