@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { requireUserId } from "@/lib/auth";
 import { db } from "@/lib/db/client";
@@ -9,6 +9,13 @@ import { trips } from "@/lib/db/schema";
 // move on, plus destination/numDays for its "N days in City" subtitle (cheap
 // to include, avoids a second request). Full trip data is GET
 // /api/trips/[id]+api.ts.
+//
+// `stage` is the real progress of an in-flight generation, derived from data
+// that already exists (no extra column): still waiting for the worker →
+// "queued"; AI is writing the itinerary (status `generating`, nothing saved
+// yet) → "itinerary"; itinerary saved, cover photo being fetched → "cover".
+// Only whether the itinerary is null is checked, not its contents — it can be
+// large and this route is polled every couple of seconds.
 export async function GET(request: Request, { id }: Record<string, string>) {
   const userId = await requireUserId(request);
   if (!userId) {
@@ -21,6 +28,7 @@ export async function GET(request: Request, { id }: Record<string, string>) {
       errorMessage: trips.errorMessage,
       destination: trips.destination,
       numDays: trips.numDays,
+      hasItinerary: sql<boolean>`${trips.itinerary} is not null`,
     })
     .from(trips)
     // Scoped by userId, not just id — a trip id alone must never be enough
@@ -33,5 +41,8 @@ export async function GET(request: Request, { id }: Record<string, string>) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  return Response.json(trip);
+  const { hasItinerary, ...rest } = trip;
+  const stage = trip.status === "pending" ? "queued" : hasItinerary ? "cover" : "itinerary";
+
+  return Response.json({ ...rest, stage });
 }

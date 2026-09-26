@@ -117,13 +117,19 @@ export default function SignIn() {
       const { createdSessionId, setActive, signUp } = await startSSOFlow({ strategy });
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
+        Sentry.logger.info("User signed in", { auth_strategy: strategy });
         router.replace("/");
       } else if (signUp?.status === "missing_requirements") {
         Sentry.captureMessage(`SSO sign-up missing_requirements for ${strategy}`, "warning");
+        Sentry.logger.warn("SSO sign-up missing requirements", { auth_strategy: strategy });
       }
       // No createdSessionId and no missing requirements → the user cancelled; do nothing.
     } catch (err) {
       Sentry.captureException(err);
+      Sentry.logger.error("SSO sign-in failed", {
+        auth_strategy: strategy,
+        error_message: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setLoadingStrategy(null);
     }

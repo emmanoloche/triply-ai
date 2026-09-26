@@ -1,13 +1,33 @@
-import { Text, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback } from "react";
+import { View } from "react-native";
 
-// Placeholder — UI design for this tab comes from design/assistant-screen-ui-design.png
-// and refine-ai-ui-design.png, not built yet (see plan.md Phase 4).
-/** Renders the placeholder for the future trip assistant tab. */
-export default function Assistant() {
-  return (
-    <View className="flex-1 items-center justify-center bg-white px-6">
-      <Text className="text-center text-lg font-semibold text-[#0A0A0A]">Assistant</Text>
-      <Text className="mt-2 text-center text-[14px] text-[#5B6472]">Coming soon</Text>
-    </View>
+import { assistantNav } from "@/lib/assistantNav";
+
+/**
+ * The Assistant tab is a doorway: the chat itself is a full-screen page with no
+ * tab bar (src/app/chat.tsx) — hiding the native tab bar on a tab screen broke
+ * touches on Android, so the chat lives outside the tabs.
+ *
+ * Focusing this tab opens the chat. When the chat is closed the app lands back
+ * here, so a flag set by the chat (see src/lib/assistantNav.ts) tells "the user
+ * just left the chat" apart from "the user tapped the tab" — in that case they
+ * are sent Home instead of the chat being reopened. (useCallback is required by
+ * useFocusEffect's API.)
+ */
+export default function AssistantTab() {
+  const router = useRouter();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (assistantNav.returning) {
+        assistantNav.returning = false;
+        router.navigate("/");
+      } else {
+        router.push("/chat");
+      }
+    }, [router]),
   );
+
+  return <View className="flex-1 bg-white" />;
 }

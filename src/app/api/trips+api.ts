@@ -5,7 +5,12 @@ import { requireUserId } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { trips } from "@/lib/db/schema";
 import { inngest } from "@/lib/inngest/client";
-import { tryConsumeGeneration } from "@/lib/usage";
+import { refundGeneration, tryConsumeGeneration } from "@/lib/usage";
+
+// A generation still pending/generating after this long is treated as orphaned.
+// Worst case for a healthy run is a few minutes (each AI provider's 60s timeout x
+// Inngest's retries, plus cover-image retries), so 10 minutes is a safe margin.
+const STALE_IN_FLIGHT_MS = 10 * 60 * 1000;
 
 // Powers (home)/trips.tsx's list. Only `ready` trips — pending/generating
 // aren't done yet, and failed ones have nothing useful to show on a card.
@@ -59,17 +64,33 @@ export async function POST(request: Request) {
   }
 
   // Don't let a user run more than one generation at a time — cheaper (no
-  // wasted Gemini calls/quota for a trip they've forgotten about) and avoids
+  // wasted AI calls/quota for a trip they've forgotten about) and avoids
   // confusing "which loading screen is this" states. Server-side, not just
   // client-side, since the client can't be trusted to enforce this alone.
   const [inProgress] = await db
-    .select({ id: trips.id })
+    .select({ id: trips.id, updatedAt: trips.updatedAt })
     .from(trips)
     .where(and(eq(trips.userId, userId), inArray(trips.status, ["pending", "generating"])))
     .limit(1);
 
   if (inProgress) {
-    return Response.json({ id: inProgress.id, reused: true }, { status: 200 });
+    if (Date.now() - inProgress.updatedAt.getTime() < STALE_IN_FLIGHT_MS) {
+      return Response.json({ id: inProgress.id, reused: true }, { status: 200 });
+    }
+
+    // Orphaned: nothing finished it within any plausible generation time
+    // (e.g. submitted while the Inngest server wasn't running). Fail it so it
+    // stops blocking the user, and give back the quota it consumed. The status
+    // guard makes this a no-op if it actually completed in the meantime.
+    const [expired] = await db
+      .update(trips)
+      .set({ status: "failed", errorMessage: "Generation timed out. Please try again." })
+      .where(and(eq(trips.id, inProgress.id), inArray(trips.status, ["pending", "generating"])))
+      .returning({ id: trips.id });
+    if (!expired) {
+      return Response.json({ id: inProgress.id, reused: true }, { status: 200 });
+    }
+    await refundGeneration(userId);
   }
 
   const allowed = await tryConsumeGeneration(userId);
