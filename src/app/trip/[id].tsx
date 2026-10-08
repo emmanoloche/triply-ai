@@ -19,16 +19,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Chevron } from "@/components/Chevron";
+import { RefineTripSheet, type RefinedTrip } from "@/components/RefineTripSheet";
+import { TripMap } from "@/components/TripMap";
 import type { BudgetBreakdown, HotelSuggestion, ItineraryDay } from "@/lib/itinerary";
 import { titleCase } from "@/lib/text";
 
 const AI_LOGO = require("../../../assets/images/ai-logo.png");
 
-// UI from design/trip-detail-screen-design1.png. The "Map" section is a
-// placeholder, not a pixel-match — react-native-maps is native-only, isn't
-// installed yet, can't run in Expo Go, and needs a Google Maps API key on
-// Android (all already tracked as deferred work in plan.md). Everything
-// else here is built to match the design.
+// UI from design/trip-detail-screen-design1.png. The "Map" section uses
+// MapLibre + OpenFreeMap (native only, per AGENTS.md) — see TripMap.native.tsx
+// for why this replaced the originally-planned react-native-maps.
 
 const BLUE = "#076FFA";
 const NAVY = "10, 24, 39";
@@ -42,6 +42,7 @@ type Trip = {
   numDays: number;
   numTravelers: number;
   budgetTier: string;
+  pace: string;
   status: string;
   coverImageUrl: string | null;
   coverImageCredit: string | null;
@@ -152,6 +153,7 @@ export default function TripDetail() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [refineOpen, setRefineOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -319,8 +321,15 @@ export default function TripDetail() {
   }
 
   const city = titleCase(trip.destination.split(",")[0].trim());
-  const HEADER_HEIGHT = 370;
-  const DOME_WIDTH = width * 1.7;
+  // Shorter than the design's 370 so the map (and ideally the itinerary
+  // header) fits above the fold on a phone without scrolling. The dome's
+  // corner radius (DOME_WIDTH/2) is scaled down by the same factor as the
+  // height — otherwise the radius tuned for the taller header overwhelms a
+  // shorter box and the bottom curve looks wrong.
+  const BASE_HEADER_HEIGHT = 370;
+  const BASE_DOME_WIDTH_FACTOR = 1.7;
+  const HEADER_HEIGHT = 330;
+  const DOME_WIDTH = width * BASE_DOME_WIDTH_FACTOR * (HEADER_HEIGHT / BASE_HEADER_HEIGHT);
 
   return (
     <View className="flex-1 bg-white">
@@ -397,7 +406,7 @@ export default function TripDetail() {
             )}
           </RoundIconButton>
 
-          <View style={{ position: "absolute", left: 22, right: 22, bottom: 46 }}>
+          <View style={{ position: "absolute", left: 22, right: 22, bottom: 58 }}>
             <View className="flex-row items-center">
               <Text className="text-[16px]">📍</Text>
               <Text className="ml-1.5 text-[18px] font-bold text-white">{city}</Text>
@@ -417,7 +426,7 @@ export default function TripDetail() {
           </View>
         </View>
 
-        <View className="flex-row px-5 pt-7">
+        <View className="flex-row px-5 pt-5">
           <StatItem emoji="📅" value={`${trip.numDays} ${trip.numDays === 1 ? "day" : "days"}`} label="Duration" />
           <StatItem emoji="👥" value={String(trip.numTravelers)} label="Travelers" />
           <StatItem
@@ -427,20 +436,12 @@ export default function TripDetail() {
           />
         </View>
 
-        <View className="mt-8 px-5">
+        <View className="mt-6 px-5">
           <Text className="text-[20px] font-bold text-[#0A0A0A]">Map</Text>
-          <View
-            className="mt-3 h-[220px] items-center justify-center rounded-[18px]"
-            style={{ backgroundColor: "#EEF2F6" }}
-          >
-            <Text className="text-[28px]">🗺️</Text>
-            <Text className="mt-2 text-center text-[13px] text-[#9CA3AF]">
-              Map view needs a native build{"\n"}(not available in Expo Go)
-            </Text>
-          </View>
+          <TripMap itinerary={trip.itinerary} />
         </View>
 
-        <View className="mt-8 px-5">
+        <View className="mt-6 px-5">
           <Text className="text-[20px] font-bold text-[#0A0A0A]">Itinerary</Text>
           <Text className="text-[14px] text-[#6B7280]">Your day-by-day plan</Text>
 
@@ -498,7 +499,8 @@ export default function TripDetail() {
           content. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Open AI assistant"
+        accessibilityLabel="Refine trip with AI"
+        onPress={() => setRefineOpen(true)}
         className="h-[68px] w-[68px] items-center justify-center overflow-hidden rounded-full active:opacity-90"
         style={{
           position: "absolute",
@@ -509,6 +511,13 @@ export default function TripDetail() {
       >
         <Image source={AI_LOGO} contentFit="cover" style={{ width: "100%", height: "100%" }} />
       </Pressable>
+
+      <RefineTripSheet
+        visible={refineOpen}
+        onClose={() => setRefineOpen(false)}
+        tripId={trip.id}
+        onTripUpdated={(refined: RefinedTrip) => setTrip((prev) => (prev ? { ...prev, ...refined } : prev))}
+      />
     </View>
   );
 }

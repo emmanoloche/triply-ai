@@ -15,9 +15,14 @@ const MODEL = "gpt-5.4-mini";
  *
  * JSON mode requires the prompt itself to mention JSON, which both of our
  * prompts do. `maxRetries: 1` lets the SDK absorb one transient 429/5xx/network
- * blip before we give up and fall back.
+ * blip before we give up and fall back. `model` defaults to MODEL; the trip
+ * generation experiment overrides it per run.
  */
-export async function generateWithOpenAI(prompt: string, temperature: number): Promise<string> {
+export async function generateWithOpenAI(
+  prompt: string,
+  temperature: number,
+  model: string = MODEL,
+): Promise<string> {
   if (!env.OPENAI_API_KEY) {
     throw new Error("Missing OPENAI_API_KEY — get one from https://platform.openai.com/api-keys and add it to .env");
   }
@@ -25,7 +30,7 @@ export async function generateWithOpenAI(prompt: string, temperature: number): P
   const client = new OpenAI({ apiKey: env.OPENAI_API_KEY, timeout: 60_000, maxRetries: 1 });
 
   const response = await client.chat.completions.create({
-    model: MODEL,
+    model,
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
     temperature,

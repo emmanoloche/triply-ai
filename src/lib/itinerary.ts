@@ -65,3 +65,23 @@ export type ItineraryDay = z.infer<typeof itineraryDaySchema>;
 export type BudgetBreakdown = z.infer<typeof budgetBreakdownSchema>;
 export type HotelSuggestion = z.infer<typeof hotelSuggestionSchema>;
 export type TripGeneration = z.infer<typeof tripGenerationSchema>;
+
+// Shape asked of the model when refining an already-generated trip via chat
+// (src/app/api/trips/[id]/chat+api.ts). It always returns the trip's full
+// state back — every field a generation produces, not a patch — whether or
+// not the request actually changed anything, so a "change the destination"
+// request can update everything that depends on it (itinerary, budget,
+// hotels, cover photo) in one edit instead of leaving them stale.
+export const chatRefineSchema = z.object({
+  reply: z.string(),
+  destination: z.string(),
+  numDays: z.number().int().positive(),
+  numTravelers: z.number().int().positive(),
+  budgetTier: z.enum(["budget", "comfort", "luxury"]),
+  pace: z.enum(["relaxed", "balanced", "fast"]),
+  itinerary: z.array(itineraryDaySchema).min(1),
+  budgetBreakdown: budgetBreakdownSchema,
+  hotelSuggestions: z.array(hotelSuggestionSchema).default([]),
+});
+
+export type ChatRefineResult = z.infer<typeof chatRefineSchema>;

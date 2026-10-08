@@ -184,7 +184,8 @@ export default function Home() {
           ) : (
             <View className="items-center justify-center rounded-[24px] bg-[#F3F4F6] px-6 py-10">
               <Text className="text-center text-[14px] text-[#6B7280]">
-                No trips yet — generate one to see it here.
+                No trips yet. Tap <Text className="font-semibold" style={{ color: BLUE }}>Get started ↑</Text> in the
+                blue card above to plan your first trip.
               </Text>
             </View>
           )}

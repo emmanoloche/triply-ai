@@ -2,6 +2,15 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Lets tsc resolve `.native.tsx` / `.web.tsx` platform-split files the
+    // same way Metro already does at runtime (e.g. TripMap.native.tsx vs
+    // TripMap.web.tsx imported as "@/components/TripMap"). Not set by
+    // expo/tsconfig.base. Note: tsc picks one match per import (whichever
+    // suffix comes first here) rather than checking both platform variants
+    // against every importer — each platform file is still fully
+    // type-checked on its own, just not cross-validated against callers of
+    // the other platform's version.
+    "moduleSuffixes": [".native", ".web", ""],
     "paths": {
       "@/*": [
         "./src/*"

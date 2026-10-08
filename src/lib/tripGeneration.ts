@@ -10,6 +10,8 @@ export type GenerateItineraryInput = {
   budgetTier: "budget" | "comfort" | "luxury";
   pace: "relaxed" | "balanced" | "fast";
   interests: string[];
+  /** Overrides the default OpenAI model; Gemini is still the fallback. */
+  openAiModel?: string;
 };
 
 /** Formats trip constraints and the required JSON shape for the model. */
@@ -72,5 +74,6 @@ export async function generateItinerary(input: GenerateItineraryInput): Promise<
     temperature: 0.8,
     schema: tripGenerationSchema,
     geminiModel: GEMINI_ITINERARY_MODEL,
+    openAiModel: input.openAiModel,
   });
 }

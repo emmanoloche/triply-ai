@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { experiment, group } from "inngest";
 import { z } from "zod";
 
 import { db } from "@/lib/db/client";
@@ -75,16 +76,28 @@ export const generateTrip = inngest.createFunction(
     });
 
     // OpenAI first, Gemini as the fallback — handled inside generateItinerary.
-    const generated = await step.run("generate-itinerary", async () => {
-      return generateItinerary({
-        destination: data.destination,
-        startDate: data.startDate,
-        numDays: data.numDays,
-        numTravelers: data.numTravelers,
-        budgetTier: data.budgetTier,
-        pace: data.pace,
-        interests: data.interests,
-      });
+    // A/B experiment on the OpenAI model: ~90% of runs use gpt-4o-mini, ~10%
+    // use gpt-4o. The variant is seeded by the run ID and memoized, so retries
+    // of a run always use the same model (and the completed step isn't re-run).
+    const input = {
+      destination: data.destination,
+      startDate: data.startDate,
+      numDays: data.numDays,
+      numTravelers: data.numTravelers,
+      budgetTier: data.budgetTier,
+      pace: data.pace,
+      interests: data.interests,
+    };
+    const { result: generated } = await group.experiment("itinerary-model", {
+      variants: {
+        "gpt-4o-mini": () =>
+          step.run("generate-itinerary-gpt-4o-mini", () =>
+            generateItinerary({ ...input, openAiModel: "gpt-4o-mini" }),
+          ),
+        "gpt-4o": () =>
+          step.run("generate-itinerary-gpt-4o", () => generateItinerary({ ...input, openAiModel: "gpt-4o" })),
+      },
+      select: experiment.weighted({ "gpt-4o-mini": 90, "gpt-4o": 10 }),
     });
 
     // Saved right away (status stays `generating`) instead of at the very end,

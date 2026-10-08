@@ -51,7 +51,9 @@
         {
           "photosPermission": "Allow Triply to access your photos to set a trip's cover image."
         }
-      ]
+      ],
+      "@maplibre/maplibre-react-native",
+      "@clerk/expo-google-signin"
     ],
     "experiments": {
       "typedRoutes": true,

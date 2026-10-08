@@ -112,7 +112,7 @@ function SegmentedControl<T extends string>({
   onChange,
 }: {
   options: { key: T; label: string }[];
-  value: T;
+  value: T | null;
   onChange: (key: T) => void;
 }) {
   return (
@@ -160,10 +160,10 @@ export default function GenerateTrip() {
   });
   const [endDate, setEndDate] = useState<PickedDate | null>(null);
 
-  const [budget, setBudget] = useState<BudgetTier>("comfort");
-  const [travelers, setTravelers] = useState(2);
-  const [interests, setInterests] = useState<string[]>(["Beaches", "Food & drink"]);
-  const [pace, setPace] = useState<TravelPace>("relaxed");
+  const [budget, setBudget] = useState<BudgetTier | null>(null);
+  const [travelers, setTravelers] = useState(1);
+  const [interests, setInterests] = useState<string[]>([]);
+  const [pace, setPace] = useState<TravelPace | null>(null);
 
   const weeks = getMonthWeeks(viewYear, viewMonth);
   const isViewingCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
@@ -241,6 +241,11 @@ export default function GenerateTrip() {
       const numDays = startDate !== null && endDate !== null ? inclusiveDays(startDate, endDate) : 1;
       const startDateStr = toIsoDate(effectiveStart);
 
+      // Nothing is pre-selected on the form, so an untouched budget or pace
+      // falls back to the middle option.
+      const budgetTier: BudgetTier = budget ?? "comfort";
+      const tripPace: TravelPace = pace ?? "balanced";
+
       const token = await getToken();
       const res = await fetch("/api/trips", {
         method: "POST",
@@ -253,8 +258,8 @@ export default function GenerateTrip() {
           startDate: startDateStr,
           numDays,
           numTravelers: travelers,
-          budgetTier: budget,
-          pace,
+          budgetTier,
+          pace: tripPace,
           interests,
         }),
       });
@@ -270,8 +275,8 @@ export default function GenerateTrip() {
         reused_existing_trip: reused,
         num_days: numDays,
         num_travelers: travelers,
-        budget_tier: budget,
-        pace,
+        budget_tier: budgetTier,
+        pace: tripPace,
         interest_count: interests.length,
       });
       if (reused) {

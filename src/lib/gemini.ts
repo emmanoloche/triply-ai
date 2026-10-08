@@ -18,6 +18,8 @@ import type { ChatTurn } from "@/lib/llm";
 export const GEMINI_ITINERARY_MODEL = "gemini-3.5-flash-lite";
 /** Separate model for popular destinations so its quota is independent. */
 export const GEMINI_DESTINATIONS_MODEL = "gemini-3.6-flash";
+/** Separate model for the trip-refine chat so its quota is independent too. */
+export const GEMINI_REFINE_MODEL = "gemini-3.6-flash";
 
 /**
  * Asks Gemini for a JSON object and returns the raw text (parsing and

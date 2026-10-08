@@ -33,11 +33,13 @@ export async function generateValidatedJson<T>(options: {
   temperature: number;
   schema: z.ZodType<T>;
   geminiModel: string;
+  /** Overrides the default OpenAI model (used by the trip generation experiment). */
+  openAiModel?: string;
 }): Promise<T> {
-  const { prompt, temperature, schema, geminiModel } = options;
+  const { prompt, temperature, schema, geminiModel, openAiModel } = options;
 
   try {
-    return parseAndValidate(await generateWithOpenAI(prompt, temperature), schema);
+    return parseAndValidate(await generateWithOpenAI(prompt, temperature, openAiModel), schema);
   } catch (openAiError) {
     console.warn("OpenAI failed, falling back to Gemini:", messageOf(openAiError));
 

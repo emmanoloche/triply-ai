@@ -115,6 +115,29 @@ export const assistantMessages = pgTable(
 );
 
 /**
+ * The trip detail screen's "Refine with AI" conversation, one row per
+ * message, scoped to a single trip (not the user directly — reachable via the
+ * trip's own `userId`). A question and its answer are saved together only
+ * once the answer has fully arrived (see api/trips/[id]/chat+api.ts), and an
+ * answer that actually changed the itinerary carries that new itinerary along
+ * with it so the trip's edit history stays reconstructable from the
+ * conversation. Rows go away with the trip (cascade).
+ */
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tripId: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    role: text("role").$type<"user" | "assistant">().notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("chat_messages_trip_created_idx").on(table.tripId, table.createdAt)],
+);
+
+/**
  * Per-user, per-day counter backing the 20-generations/day safety cap (see
  * src/lib/usage.ts). One row per (userId, day); `count` is incremented
  * atomically on submit and decremented if generation ultimately fails, so a

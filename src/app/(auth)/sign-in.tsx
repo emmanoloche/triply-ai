@@ -1,4 +1,5 @@
 import { useSSO } from "@clerk/expo";
+import { useSignInWithGoogle } from "@clerk/expo/google";
 import * as Sentry from "@sentry/react-native";
 import { Image, type ImageSource } from "expo-image";
 import { useRouter } from "expo-router";
@@ -6,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -14,6 +16,8 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { LEGAL_LINKS } from "@/lib/legal";
 
 type OAuthStrategy = "oauth_google" | "oauth_apple";
 
@@ -108,7 +112,40 @@ export default function SignIn() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { startSSOFlow } = useSSO();
+  const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
   const [loadingStrategy, setLoadingStrategy] = useState<OAuthStrategy | null>(null);
+
+  const openLegalLink = (url: string) => {
+    Linking.openURL(url).catch((err) => Sentry.captureException(err));
+  };
+
+  // Fully native Google sheet (Credential Manager) on Android/iOS — better UX
+  // than the browser-based SSO flow below. Additive, not a replacement:
+  // useSSO still handles Web (native sign-in doesn't exist there) and stays
+  // as the underlying mechanism for Apple, which isn't wired to native yet.
+  const handleGoogle = async () => {
+    if (loadingStrategy) return;
+    if (Platform.OS === "web") return handleSSO("oauth_google");
+
+    setLoadingStrategy("oauth_google");
+    try {
+      const { createdSessionId, setActive } = await startGoogleAuthenticationFlow();
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+        Sentry.logger.info("User signed in", { auth_strategy: "oauth_google", native: true });
+        router.replace("/");
+      }
+      // No createdSessionId → the user cancelled the native sheet; do nothing.
+    } catch (err: any) {
+      if (err?.code === "SIGN_IN_CANCELLED" || err?.code === "-5") return;
+      Sentry.captureException(err);
+      Sentry.logger.error("Native Google sign-in failed", {
+        error_message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setLoadingStrategy(null);
+    }
+  };
 
   const handleSSO = async (strategy: OAuthStrategy) => {
     if (loadingStrategy) return;
@@ -196,7 +233,7 @@ export default function SignIn() {
               variant="light"
               loading={loadingStrategy === "oauth_google"}
               disabled={loadingStrategy !== null && loadingStrategy !== "oauth_google"}
-              onPress={() => handleSSO("oauth_google")}
+              onPress={handleGoogle}
             />
             <View className="mt-[13.1px]">
               <AuthButton
@@ -216,8 +253,21 @@ export default function SignIn() {
 
           <Text className="mt-[26.2px] text-center text-[12px] font-normal leading-[18px] text-white">
             By continuing, you agree to our{"\n"}
-            <Text className="text-[#2094FF]">Terms of Service</Text> and{" "}
-            <Text className="text-[#2094FF]">Privacy Policy</Text>
+            <Text
+              className="text-[#2094FF]"
+              accessibilityRole="link"
+              onPress={() => openLegalLink(LEGAL_LINKS.termsOfService)}
+            >
+              Terms of Service
+            </Text>{" "}
+            and{" "}
+            <Text
+              className="text-[#2094FF]"
+              accessibilityRole="link"
+              onPress={() => openLegalLink(LEGAL_LINKS.privacyPolicy)}
+            >
+              Privacy Policy
+            </Text>
           </Text>
         </View>
       </View>
